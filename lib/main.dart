@@ -21,8 +21,8 @@ List<DownloadedVideoModel> downloadedHistory = [];
 
 // لیست سرورهای پشتیبان
 List<String> cobaltApiUrls = [
-  'https://api.cobalt.best/api/json',
   'https://co.wuk.sh/api/json',
+  'https://api.cobalt.best/api/json',
 ];
 
 // مدل داده‌ای تبلیغات
@@ -45,8 +45,8 @@ class AdModel {
 List<AdModel> globalAds = [
   AdModel(
     id: '1', 
-    title: 'تبلیغ اول: معرفی کانال تلگرام ما\nارتباط با ما: 09123456789', 
-    link: 'https://t.me/example',
+    title: 'ارتباط با ما در واتساپ برای پشتیبانی و سفارشات:', 
+    link: 'https://wa.me/93XXXXXXXXX',
     duration: 5, 
     isActive: true,
   ),
@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
             textDirection: TextDirection.ltr,
             textAlign: TextAlign.left,
             decoration: InputDecoration(
-              hintText: 'https://vt.tiktok.com/... یا https://youtu.be/...',
+              hintText: 'https://instagram.com/... یا https://youtu.be/...',
               hintTextDirection: TextDirection.ltr,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -506,12 +506,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 15);
-      dio.options.receiveTimeout = const Duration(seconds: 15);
+      dio.options.connectTimeout = const Duration(seconds: 20);
+      dio.options.receiveTimeout = const Duration(seconds: 20);
 
       String? downloadUrl;
       bool success = false;
 
+      // 1. بررسی اختصاصی برای تیک‌تاک
       if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
         try {
           final response = await dio.get(
@@ -520,13 +521,15 @@ class _HomeScreenState extends State<HomeScreen> {
           );
           if (response.statusCode == 200 && response.data['code'] == 0) {
             downloadUrl = response.data['data']['play'];
-            success = true;
+            if (downloadUrl != null && downloadUrl.isNotEmpty) {
+              success = true;
+            }
           }
         } catch (_) {}
       }
 
+      // 2. بررسی جامع برای اینستاگرام، یوتیوب و سایر پلتفرم‌ها (Cobalt API)
       if (!success) {
-        String lastError = '';
         for (String apiUrl in cobaltApiUrls) {
           try {
             final response = await dio.post(
@@ -538,107 +541,113 @@ class _HomeScreenState extends State<HomeScreen> {
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                 },
               ),
-              data: {'url': formattedUrl},
+              data: {
+                'url': formattedUrl,
+                'v': '2',
+              },
             );
-            if (response.statusCode == 200) {
+
+            if (response.statusCode == 200 && response.data != null) {
               final data = response.data;
-              if (data['status'] == 'stream' || data['status'] == 'redirect') {
+              final status = data['status'];
+
+              if (status == 'stream' || status == 'redirect' || status == 'tunnel') {
                 downloadUrl = data['url'];
                 success = true;
                 break;
-              } else if (data['status'] == 'picker') {
-                final picker = data['picker'] as List;
-                if (picker.isNotEmpty) {
+              } else if (status == 'picker') {
+                final picker = data['picker'] as List?;
+                if (picker != null && picker.isNotEmpty) {
                   downloadUrl = picker[0]['url'];
                   success = true;
                   break;
                 }
+              } else if (data['url'] != null) {
+                downloadUrl = data['url'];
+                success = true;
+                break;
               }
             }
-          } catch (err) {
-            lastError = err.toString();
+          } catch (_) {
             continue;
           }
         }
-        if (!success) {
-          throw Exception('امکان دریافت لینک ویدیو وجود ندارد. جزئیات: $lastError');
-        }
       }
 
-      if (downloadUrl != null) {
-        var dir = await getTemporaryDirectory();
-        var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-        
-        _currentDownloadUrl = downloadUrl;
-        _currentFilePath = filePath;
-        _cancelToken = CancelToken();
+      if (!success || downloadUrl == null) {
+        throw Exception('امکان استخراج لینک دانلود ویدیو از این پلتفرم وجود ندارد.');
+      }
 
-        final response = await dio.get<ResponseBody>(
-          downloadUrl,
-          options: Options(
-            responseType: ResponseType.stream,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            },
-          ),
-          cancelToken: _cancelToken,
-        );
+      var dir = await getTemporaryDirectory();
+      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+      
+      _currentDownloadUrl = downloadUrl;
+      _currentFilePath = filePath;
+      _cancelToken = CancelToken();
 
-        final totalHeader = response.headers.value(Headers.contentLengthHeader);
-        _totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
-
-        final file = File(filePath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-        final raf = await file.open(mode: FileMode.write);
-
-        response.data!.stream.listen(
-          (data) {
-            if (_isPaused) return;
-            raf.writeFromSync(data);
-            _receivedBytes += data.length;
-            if (mounted) {
-              setState(() {
-                if (_totalBytes > 0) {
-                  _downloadProgress = _receivedBytes / _totalBytes;
-                }
-              });
-            }
+      final response = await dio.get<ResponseBody>(
+        downloadUrl,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           },
-          onDone: () async {
-            await raf.close();
-            if (!_isPaused) {
-              await Gal.putVideo(filePath);
-              setState(() {
-                downloadedHistory.add(
-                  DownloadedVideoModel(
-                    filePath: filePath,
-                    date: DateTime.now().toString().substring(0, 19),
-                  ),
-                );
-                _isDownloading = false;
-              });
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-                );
-                _urlController.clear();
+        ),
+        cancelToken: _cancelToken,
+      );
+
+      final totalHeader = response.headers.value(Headers.contentLengthHeader);
+      _totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
+
+      final file = File(filePath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      final raf = await file.open(mode: FileMode.write);
+
+      response.data!.stream.listen(
+        (data) {
+          if (_isPaused) return;
+          raf.writeFromSync(data);
+          _receivedBytes += data.length;
+          if (mounted) {
+            setState(() {
+              if (_totalBytes > 0) {
+                _downloadProgress = _receivedBytes / _totalBytes;
               }
+            });
+          }
+        },
+        onDone: () async {
+          await raf.close();
+          if (!_isPaused) {
+            await Gal.putVideo(filePath);
+            setState(() {
+              downloadedHistory.add(
+                DownloadedVideoModel(
+                  filePath: filePath,
+                  date: DateTime.now().toString().substring(0, 19),
+                ),
+              );
+              _isDownloading = false;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+              );
+              _urlController.clear();
             }
-          },
-          onError: (e) async {
-            await raf.close();
-            if (!CancelToken.isCancel(e as DioException)) {
-              setState(() => _isDownloading = false);
-            }
-          },
-          cancelOnError: true,
-        );
+          }
+        },
+        onError: (e) async {
+          await raf.close();
+          if (!CancelToken.isCancel(e as DioException)) {
+            setState(() => _isDownloading = false);
+          }
+        },
+        cancelOnError: true,
+      );
 
-      } else {
-        throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
-      }
     } catch (e) {
       if (!CancelToken.isCancel(e as DioException)) {
         if (mounted) {
@@ -739,7 +748,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 }
 
-// صفحه نمایش تبلیغ با قابلیت کلیک روی لینک
+// صفحه نمایش تبلیغ با قابلیت کلیک روی لینک خارجی (مثل واتساپ)
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -805,7 +814,7 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                     textAlign: TextAlign.center,
                   ),
                   if (widget.ad.link.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     InkWell(
                       onTap: () async {
                         final uri = Uri.parse(widget.ad.link);
@@ -813,15 +822,30 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
                         }
                       },
-                      child: Text(
-                        widget.ad.link,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          color: Colors.blueAccent,
-                          decoration: TextDecoration.underline,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.green, width: 1.5),
                         ),
-                        textAlign: TextAlign.center,
-                        textDirection: TextDirection.ltr,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.chat, color: Colors.greenAccent),
+                            const SizedBox(width: 8),
+                            Text(
+                              widget.ad.link,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.greenAccent,
+                                decoration: TextDecoration.underline,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textDirection: TextDirection.ltr,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -949,7 +973,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                     controller: _adLinkController,
                                     textDirection: TextDirection.ltr,
                                     decoration: const InputDecoration(
-                                      labelText: 'لینک قابل کلیک (URL - مثلاً https://...)',
+                                      labelText: 'لینک قابل کلیک (مثلاً https://wa.me/...)',
                                     ),
                                   ),
                                   const SizedBox(height: 8),
