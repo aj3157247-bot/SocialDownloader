@@ -6,7 +6,18 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// لیست سرورهای پشتیبان برای سایر پلتفرم‌ها (اینستاگرام، یوتیوب و...)
+// مدل ویدیوهای دانلود شده
+class DownloadedVideoModel {
+  String filePath;
+  String date;
+
+  DownloadedVideoModel({required this.filePath, required this.date});
+}
+
+// لیست سراسری ویدیوهای دانلود شده برای نمایش در برنامه
+List<DownloadedVideoModel> downloadedHistory = [];
+
+// لیست سرورهای پشتیبان
 List<String> cobaltApiUrls = [
   'https://api.cobalt.best/api/json',
   'https://co.wuk.sh/api/json',
@@ -16,7 +27,7 @@ List<String> cobaltApiUrls = [
 class AdModel {
   String id;
   String title;
-  int duration; // ثانیه
+  int duration;
   bool isActive;
 
   AdModel({
@@ -27,7 +38,6 @@ class AdModel {
   });
 }
 
-// لیست سراسری تبلیغات (مدیریت شده توسط ادمین)
 List<AdModel> globalAds = [
   AdModel(id: '1', title: 'تبلیغ اول: معرفی کانال تلگرام ما', duration: 5, isActive: true),
   AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه سرویس‌ها', duration: 5, isActive: true),
@@ -66,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
   bool _isDownloading = false;
+  double _downloadProgress = 0.0; // درصد پیشرفت دانلود
 
   @override
   Widget build(BuildContext context) {
@@ -129,9 +140,23 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           _isDownloading
-              ? const Center(child: CircularProgressIndicator())
+              ? Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: _downloadProgress,
+                      backgroundColor: Colors.grey[800],
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                      minHeight: 8,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                )
               : ElevatedButton.icon(
                   onPressed: () {
                     if (_urlController.text.isEmpty) {
@@ -151,35 +176,63 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () {
-              if (_urlController.text.isNotEmpty) {
-                Share.share('Check out this video: ${_urlController.text}');
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('لینکی برای اشتراک‌گذاری وجود ندارد')),
-                );
-              }
-            },
-            icon: const Icon(Icons.share),
-            label: const Text('اشتراک‌گذاری'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
+          const SizedBox(height: 20),
+          const Text(
+            'ویدیوهای دانلود شده اخیر در این برنامه:',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: downloadedHistory.isEmpty
+                ? const Center(
+                    child: Text(
+                      'هنوز ویدیویی دانلود نشده است',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: downloadedHistory.length,
+                    itemBuilder: (context, index) {
+                      final item = downloadedHistory[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(Icons.video_file, color: Colors.blueAccent, size: 36),
+                          title: Text(
+                            'ویدیو شماره ${index + 1}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(item.date, style: const TextStyle(fontSize: 12)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.share, color: Colors.greenAccent),
+                            onPressed: () async {
+                              try {
+                                await Share.shareXFiles(
+                                  [XFile(item.filePath)],
+                                  text: 'دانلود شده از اپلیکیشن Social Downloader Pro',
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('خطا در اشتراک‌گذاری: $e')),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
 
-  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
-
     if (text.startsWith('ttps://')) {
       text = 'h$text';
     } else if (text.startsWith('ttp://')) {
@@ -203,16 +256,13 @@ class _HomeScreenState extends State<HomeScreen> {
         text = 'h$text';
       }
     }
-
     return text;
   }
 
   void _playAdsAndDownload(BuildContext context, String rawUrl) async {
     String formattedUrl = _extractValidUrl(rawUrl);
-
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
-    // نمایش تبلیغات پیش از دانلود
     if (activeAds.isNotEmpty) {
       for (var ad in activeAds) {
         await Navigator.push(
@@ -227,6 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _isDownloading = true;
+      _downloadProgress = 0.0;
     });
 
     try {
@@ -237,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
-      // اگر لینک مربوط به تیک‌تاک باشد، از API اختصاصی و بدون تحریم TikWM استفاده می‌شود
       if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
         try {
           final response = await dio.get(
@@ -251,7 +301,6 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (_) {}
       }
 
-      // اگر لینک تیک‌تاک نبود یا به هر دلیلی ناموفق بود، سرورهای دیگر تست می‌شوند
       if (!success) {
         String lastError = '';
         for (String apiUrl in cobaltApiUrls) {
@@ -296,8 +345,31 @@ class _HomeScreenState extends State<HomeScreen> {
         var dir = await getTemporaryDirectory();
         var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
         
-        await dio.download(downloadUrl, filePath);
+        // دانلود همراه با محاسبه درصد پیشرفت واقعی
+        await dio.download(
+          downloadUrl,
+          filePath,
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              setState(() {
+                _downloadProgress = received / total;
+              });
+            }
+          },
+        );
+
+        // ذخیره در گالری
         await Gal.putVideo(filePath);
+
+        // افزودن به لیست تاریخچه برنامه
+        setState(() {
+          downloadedHistory.add(
+            DownloadedVideoModel(
+              filePath: filePath,
+              date: DateTime.now().toString().substring(0, 19),
+            ),
+          );
+        });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -662,7 +734,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      pyadding: const EdgeInsets.all(16.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
