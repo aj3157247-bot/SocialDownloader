@@ -6,8 +6,8 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// آدرس API کوبالت (می‌توانید آن را به سرور شخصی یا نمونه جایگزین تغییر دهید)
-const String cobaltApiUrl = 'https://api.cobalt.tools/api/json';
+// استفاده از سرور آزاد و عمومی جامعه (Community Instance) برای دور زدن محدودیت سرور اصلی
+const String cobaltApiUrl = 'https://coapi.kelig.me/api/json';
 
 // مدل داده‌ای تبلیغات
 class AdModel {
@@ -269,8 +269,8 @@ class _HomeScreenState extends State<HomeScreen> {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
           errorMessage = 'خطا در اتصال به اینترنت. لطفاً اتصال خود را بررسی کنید.';
-        } else if (errorMessage.contains('status code of 400')) {
-          errorMessage = 'سرور اصلی درخواست را مسدود کرد (خطای 400). نیاز به استفاده از هاست/سرور شخصی (Self-hosted) کوبالت است.';
+        } else if (errorMessage.contains('status code of 400') || errorMessage.contains('status code of 403')) {
+          errorMessage = 'خطای ارتباط با سرور واسط. لطفاً دوباره تلاش کنید.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -569,7 +569,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ایمیل یا رمز عبور اشتباه است!')),
+                  constSnackBar(content: Text('ایمیل یا رمز عبور اشتباه است!')),
                 );
               }
             },
