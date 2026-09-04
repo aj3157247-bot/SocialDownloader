@@ -259,7 +259,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           subtitle: Text(item.date, style: const TextStyle(fontSize: 12)),
                           onTap: () {
-                            // باز کردن و پخش ویدیو در داخل برنامه
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -355,14 +354,14 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         onError: (e) async {
           await raf.close();
-          if (!CancelToken.isCancel(e)) {
+          if (!CancelToken.isCancel(e as DioException)) {
             setState(() => _isDownloading = false);
           }
         },
         cancelOnError: true,
       );
     } catch (e) {
-      if (!CancelToken.isCancel(e)) {
+      if (!CancelToken.isCancel(e as DioException)) {
         setState(() => _isDownloading = false);
       }
     }
@@ -552,7 +551,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           onError: (e) async {
             await raf.close();
-            if (!CancelToken.isCancel(e)) {
+            if (!CancelToken.isCancel(e as DioException)) {
               setState(() => _isDownloading = false);
             }
           },
@@ -563,7 +562,7 @@ class _HomeScreenState extends State<HomeScreen> {
         throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
       }
     } catch (e) {
-      if (!CancelToken.isCancel(e)) {
+      if (!CancelToken.isCancel(e as DioException)) {
         if (mounted) {
           String errorMessage = e.toString();
           if (errorMessage.contains('Failed host lookup')) {
