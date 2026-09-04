@@ -1,5 +1,27 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+
+// مدل داده‌ای تبلیغات
+class AdModel {
+  String id;
+  String title;
+  int duration; // ثانیه
+  bool isActive;
+
+  AdModel({
+    required this.id,
+    required this.title,
+    required this.duration,
+    this.isActive = true,
+  });
+}
+
+// لیست سراسری تبلیغات (مدیریت شده توسط ادمین)
+List<AdModel> globalAds = [
+  AdModel(id: '1', title: 'تبلیغ اول: معرفی کانال تلگرام ما', duration: 5, isActive: true),
+  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه خرید هاست', duration: 7, isActive: true),
+];
 
 void main() {
   runApp(const SocialDownloaderApp());
@@ -11,10 +33,11 @@ class SocialDownloaderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Social Downloader',
+      title: 'Social Downloader Pro',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF121212),
       ),
       home: const HomeScreen(),
       debugShowCheckedModeBanner: false,
@@ -36,13 +59,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
-      _buildDownloadPage(),
+      _buildDownloadPage(context),
       const AdminLoginScreen(),
     ];
 
     return Scaffold(
       app: AppBar(
-        title: Text(_currentIndex == 0 ? 'دانلودر هوشمند سوشال مدیا' : 'پنل مدیریت'),
+        title: Text(_currentIndex == 0 ? 'دانلودر هوشمند سوشال مدیا' : 'پنل مدیریت ادمین'),
         centerTitle: true,
       ),
       body: pages[_currentIndex],
@@ -60,14 +83,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.admin_panel_settings),
-            label: 'مدیریت',
+            label: 'مدیریت ادمین',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDownloadPage() {
+  Widget _buildDownloadPage(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -75,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Text(
             'لینک ویدیو (یوتیوب، اینستاگرام، تیک‌تاک، فیسبوک) را وارد کنید:',
-            style: TextStyle(fontSize: 16),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -97,12 +120,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
                 return;
               }
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('در حال پردازش و ذخیره در گالری...')),
-              );
+              // شروع روند نمایش تبلیغات به نوبت قبل از دانلود
+              _playAdsAndDownload(context);
             },
             icon: const Icon(Icons.download_rounded),
-            label: const Text('شروع دانلود'),
+            label: const Text('شروع دانلود و ذخیره در گالری'),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
@@ -134,8 +156,136 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // متد اجرای تبلیغات فعال به نوبت
+  void _playAdsAndDownload(BuildContext context) async {
+    final activeAds = globalAds.where((ad) => ad.isActive).toList();
+
+    if (activeAds.isNotEmpty) {
+      for (var ad in activeAds) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AdPlayerScreen(ad: ad),
+            fullscreenDialog: true,
+          ),
+        );
+      }
+    }
+
+    // پس از اتمام تبلیغات، دانلود انجام می‌شود
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تبلیغات به اتمام رسید. ویدیوی شما دانلود شد!')),
+    );
+  }
 }
 
+// صفحه نمایشگر تبلیغ با تایمر شمارش معکوس
+class AdPlayerScreen extends StatefulWidget {
+  final AdModel ad;
+  const AdPlayerScreen({super.key, required this.ad});
+
+  @override
+  State<AdPlayerScreen> createState() => _AdPlayerScreenState();
+}
+
+class _AdPlayerScreenState extends State<AdPlayerScreen> {
+  late int _timeLeft;
+  bool _canClose = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeLeft = widget.ad.duration;
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_timeLeft > 1) {
+        setState(() {
+          _timeLeft--;
+        });
+      } else {
+        _timer?.cancel();
+        setState(() {
+          _canClose = true;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async => _canClose,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('درحال نمایش تبلیغ اسپانسر'),
+          automaticallyImplyLeading: false,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.campaign_rounded, size: 90, color: Colors.amberAccent),
+                const SizedBox(height: 24),
+                Text(
+                  widget.ad.title,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'لطفاً برای حمایت از اپلیکیشن تا اتمام تبلیغ صبور باشید...',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 45),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[900],
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: _canClose ? Colors.green : Colors.orange),
+                  ),
+                  child: Text(
+                    _canClose ? 'تبلیغ به پایان رسید' : 'تایم باقی‌مانده: $_timeLeft ثانیه',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _canClose ? Colors.greenAccent : Colors.orangeAccent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 45),
+                ElevatedButton(
+                  onPressed: _canClose ? () => Navigator.pop(context) : null,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(_canClose ? 'ادامه دانلود ویدیو' : 'صبر کنید تا تایم تمام شود...'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -148,6 +298,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggedIn = false;
 
+  final TextEditingController _adTitleController = TextEditingController();
+  final TextEditingController _adDurationController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
     if (_isLoggedIn) {
@@ -156,44 +309,115 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'خوش آمدید، عبدالله عزیز!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('مدیریت تبلیغات هوشمند', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.logout, color: Colors.red),
+                  onPressed: () {
+                    setState(() {
+                      _isLoggedIn = false;
+                      _emailController.clear();
+                      _passwordController.clear();
+                    });
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            const Card(
+            const Divider(),
+            // فرم افزودن تبلیغ جدید
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
-                padding: EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(12.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('آمار کلی پنل مدیریت:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 10),
-                    Text('• کل دانلودهای موفق: 1,420'),
-                    Text('• کاربران فعال: 120'),
-                    Text('• وضعیت سرور: فعال'),
+                    const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _adTitleController,
+                      decoration: const InputDecoration(labelText: 'متن یا عنوان تبلیغ'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _adDurationController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'تایم تبلیغ به ثانیه (مثلاً 10)'),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (_adTitleController.text.isNotEmpty && _adDurationController.text.isNotEmpty) {
+                          setState(() {
+                            globalAds.add(AdModel(
+                              id: DateTime.now().millisecondsSinceEpoch.toString(),
+                              title: _adTitleController.text,
+                              duration: int.tryParse(_adDurationController.text) ?? 5,
+                              isActive: true,
+                            ));
+                            _adTitleController.clear();
+                            _adDurationController.clear();
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تبلیغ جدید با موفقیت اضافه شد!')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('ثبت و افزودن تبلیغ'),
+                    ),
                   ],
                 ),
               ),
             ),
-            const Spacer(),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isLoggedIn = false;
-                  _emailController.clear();
-                  _passwordController.clear();
-                });
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('خروج از پنل مدیریت'),
+            const SizedBox(height: 10),
+            const Text('لیست تبلیغات ثبت شده:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: globalAds.length,
+                itemBuilder: (context, index) {
+                  final ad = globalAds[index];
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(ad.title),
+                      subtitle: Text('مدت زمان: ${ad.duration} ثانیه'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: ad.isActive,
+                            onChanged: (val) {
+                              setState(() {
+                                ad.isActive = val;
+                              });
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.redAccent),
+                            onPressed: () {
+                              setState(() {
+                                globalAds.removeAt(index);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
       );
     }
 
+    // صفحه ورود ادمین با اطلاعات درخواستی شما
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -201,7 +425,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'ورود به پنل مدیریت',
+            'ورود اختصاصی ادمین',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
@@ -209,7 +433,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           TextField(
             controller: _emailController,
             decoration: InputDecoration(
-              labelText: 'ایمیل مدیریت',
+              labelText: 'ایمیل ادمین',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixIcon: const Icon(Icons.email),
             ),
@@ -233,7 +457,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   _isLoggedIn = true;
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ورود موفقیت‌آمیز به پنل ادمین!')),
+                  const SnackBar(content: Text('خوش آمدید عبدالله عزیز! پنل مدیریت باز شد.')),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -245,7 +469,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('ورود به سیستم'),
+            child: const Text('ورود به پنل مدیریت'),
           ),
         ],
       ),
