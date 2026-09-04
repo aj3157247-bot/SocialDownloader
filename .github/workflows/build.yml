@@ -29,7 +29,7 @@ jobs:
       - name: Create platform files if missing
         run: flutter create . --project-name=social_downloader --platforms=android --org com.abdullah.socialdownloader
 
-      - name: Fix Kotlin version conflict
+      - name: Fix Android and Gal Build Configurations
         run: |
           echo "
           allprojects {
@@ -38,6 +38,15 @@ jobs:
                       force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
                       force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
                       force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+                  }
+              }
+          }
+          subprojects { subproject ->
+              if (subproject.name == 'gal') {
+                  subproject.ext.flutter = new Object() {
+                      int compileSdkVersion = 34
+                      int targetSdkVersion = 34
+                      String ndkVersion = '23.1.7779620'
                   }
               }
           }
