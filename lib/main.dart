@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:dio/dio.dart';
 
 // مدل داده‌ای تبلیغات
 class AdModel {
@@ -102,8 +102,8 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'لینک ویدیو (یوتیوب، شورتس، اینستاگرام) را وارد کنید:',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            'لینک ویدیو (تیک‌تاک، یوتیوب، اینستاگرام، فیسبوک) را وارد کنید:',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -163,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // نمایش تبلیغات به نوبت قبل از شروع دانلود واقعی
+  // نمایش تبلیغات و سپس دانلود سراسری ویدیو (تیک‌تاک، اینستاگرام، یوتیوب، فیسبوک)
   void _playAdsAndDownload(BuildContext context, String url) async {
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
@@ -179,49 +179,62 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // شروع عملیات دانلود واقعی پس از اتمام تبلیغات
     setState(() {
       _isDownloading = true;
     });
 
     try {
-      final yt = YoutubeExplode();
-      
-      // استخراج شناسه ویدیو
-      var videoId = VideoId(url);
-      var manifest = await yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = manifest.muxed.sortByVideoQuality().last;
+      final dio = Dio();
+      // استفاده از سرویس استاندارد برای استخراج لینک مستقیم از تمامی پلتفرم‌ها
+      final response = await dio.post(
+        'https://api.cobalt.tools/api/json',
+        options: Options(
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+        data: {
+          'url': url,
+        },
+      );
 
-      if (streamInfo == null) {
-        throw Exception('کیفیت مناسبی برای دانلود یافت نشد.');
-      }
+      if (response.statusCode == 200) {
+        final data = response.data;
+        String? downloadUrl;
 
-      var stream = yt.videos.streamsClient.get(streamInfo);
+        if (data['status'] == 'stream' || data['status'] == 'redirect') {
+          downloadUrl = data['url'];
+        } else if (data['status'] == 'picker') {
+          final picker = data['picker'] as List;
+          if (picker.isNotEmpty) {
+            downloadUrl = picker[0]['url'];
+          }
+        }
 
-      // ذخیره موقت در حافظه دستگاه
-      var dir = await getTemporaryDirectory();
-      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-      var file = File(filePath);
-      var fileStream = file.openWrite();
+        if (downloadUrl != null) {
+          var dir = await getTemporaryDirectory();
+          var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+          
+          await dio.download(downloadUrl, filePath);
+          await Gal.putVideo(filePath);
 
-      await stream.pipe(fileStream);
-      await fileStream.flush();
-      await fileStream.close();
-      yt.close();
-
-      // ذخیره مستقیم در گالری گوشی با استفاده از پکیج Gal
-      await Gal.putVideo(filePath);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-        );
-        _urlController.clear();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+            );
+            _urlController.clear();
+          }
+        } else {
+          throw Exception('لینک دانلود از این سرویس دریافت نشد.');
+        }
+      } else {
+        throw Exception('خطا در برقراری ارتباط با سرور.');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطا در دانلود: لینک نامعتبر است یا اینترنت قطع می‌باشد')),
+          const SnackBar(content: Text('خطا در دانلود: لینک نامعتبر است یا اینترنت قطع می‌باشد')),
         );
       }
     } finally {
