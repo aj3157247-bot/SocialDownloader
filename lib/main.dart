@@ -6,12 +6,13 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// لیست جدید و گسترده‌تر از سرورهای عمومی و فعال کوبالت (Community Instances)
+// لیست گسترده‌ای از سرورهای عمومی و جایگزین کوبالت
 const List<String> cobaltApiUrls = [
   'https://co.wuk.sh/api/json',
   'https://coapi.kelig.me/api/json',
   'https://api.cobalt.best/api/json',
   'https://cobalt.kwiatekmichal.pl/api/json',
+  'https://dl.khaledkishk.com/api/json',
 ];
 
 // مدل داده‌ای تبلیغات
@@ -178,16 +179,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها (رفع خطاهای تایپی پروتکل)
+  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها (رفع خطاهای تایپی و کاراکترهای اضافی)
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
 
+    // حذف فاصله‌ها یا کاراکترهای نامربوط احتمالی در ابتدا
     if (text.startsWith('ttps://')) {
       text = 'h$text';
     } else if (text.startsWith('ttp://')) {
       text = 'h$text';
     } else if (text.startsWith('tp://')) {
       text = 'ht$text';
+    } else if (text.startsWith('t.tiktok.com') || text.startsWith('vt.tiktok.com')) {
+      text = 'https://$text';
     }
 
     if (text.startsWith('/')) {
@@ -231,8 +235,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 25);
-      dio.options.receiveTimeout = const Duration(seconds: 25);
+      dio.options.connectTimeout = const Duration(seconds: 15);
+      dio.options.receiveTimeout = const Duration(seconds: 15);
 
       Response? response;
       bool success = false;
@@ -265,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || response == null) {
-        throw Exception('خطا در ارتباط با سرورها. جزئیات: $lastError');
+        throw Exception('امکان اتصال به سرورها وجود ندارد. (احتمال فیلترینگ یا قطعی سرورها). لطفاً از ابزار تغییر IP استفاده کنید.');
       }
 
       final data = response.data;
@@ -300,11 +304,11 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
-          errorMessage = 'خطا در اتصال به اینترنت. لطفاً اتصال خود را بررسی کنید.';
+          errorMessage = 'خطا در اتصال: سرورهای واسط فیلتر یا در دسترس نیستند. لطفاً VPN خود را روشن کنید و دوباره تلاش کنید.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage, textDirection: TextDirection.ltr),
+            content: Text(errorMessage, textDirection: TextDirection.rtl),
             duration: const Duration(seconds: 7),
             backgroundColor: Colors.red.shade800,
           ),
