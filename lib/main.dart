@@ -8,7 +8,6 @@ import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
-// مدل ویدیوهای دانلود شده
 class DownloadedVideoModel {
   String filePath;
   String date;
@@ -16,16 +15,15 @@ class DownloadedVideoModel {
   DownloadedVideoModel({required this.filePath, required this.date});
 }
 
-// لیست سراسری ویدیوهای دانلود شده برای نمایش در برنامه
 List<DownloadedVideoModel> downloadedHistory = [];
 
-// لیست سرورهای پشتیبان
+// لیست سرورهای معتبر و جدید Cobalt برای یوتیوب و اینستاگرام
 List<String> cobaltApiUrls = [
+  'https://api.cobalt.tools/api/json',
   'https://co.wuk.sh/api/json',
   'https://api.cobalt.best/api/json',
 ];
 
-// مدل داده‌ای تبلیغات
 class AdModel {
   String id;
   String title;
@@ -45,15 +43,8 @@ class AdModel {
 List<AdModel> globalAds = [
   AdModel(
     id: '1', 
-    title: 'ارتباط با ما در واتساپ برای پشتیبانی و سفارشات:', 
-    link: 'https://wa.me/93XXXXXXXXX',
-    duration: 5, 
-    isActive: true,
-  ),
-  AdModel(
-    id: '2', 
-    title: 'تبلیغ دوم: تخفیف ویژه سرویس‌ها', 
-    link: '',
+    title: 'برای نشر تبلیغات خود با ما در واتساپ به تماس شوید', 
+    link: 'https://wa.me/9378045492',
     duration: 5, 
     isActive: true,
   ),
@@ -142,7 +133,6 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // بخش گرافیکی و معرفی کاربرد برنامه با آیکون زیبا
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -342,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     downloadedHistory.removeAt(index);
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('ویدیو از لیست صفحه پاک شد (فایل در گوشی باقی ماند)')),
+                                    const SnackBar(content: Text('ویدیو از لیست صفحه پاک شد')),
                                   );
                                 },
                                 tooltip: 'حذف از لیست',
@@ -454,28 +444,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
-    if (text.startsWith('ttps://')) {
-      text = 'h$text';
-    } else if (text.startsWith('ttp://')) {
-      text = 'h$text';
-    } else if (text.startsWith('tp://')) {
-      text = 'ht$text';
-    } else if (text.startsWith('t.tiktok.com') || text.startsWith('vt.tiktok.com')) {
-      text = 'https://$text';
-    }
-
-    if (text.startsWith('/')) {
-      return 'https://youtu.be$text';
-    }
-
-    final regExp = RegExp(r'https?:\/\/[^\s]+|ttps?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
+    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
     final match = regExp.firstMatch(text);
-    
     if (match != null) {
       text = match.group(0)!;
-      if (text.startsWith('ttps://')) {
-        text = 'h$text';
-      }
     }
     return text;
   }
@@ -506,13 +478,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 20);
-      dio.options.receiveTimeout = const Duration(seconds: 20);
+      dio.options.connectTimeout = const Duration(seconds: 25);
+      dio.options.receiveTimeout = const Duration(seconds: 25);
 
       String? downloadUrl;
       bool success = false;
 
-      // 1. بررسی اختصاصی برای تیک‌تاک
+      // 1. بررسی تیک‌تاک
       if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
         try {
           final response = await dio.get(
@@ -528,7 +500,7 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (_) {}
       }
 
-      // 2. بررسی جامع برای اینستاگرام، یوتیوب و سایر پلتفرم‌ها (Cobalt API)
+      // 2. بررسی یوتیوب، اینستاگرام و سایر پلتفرم‌ها با استانداردهای جدید Cobalt API
       if (!success) {
         for (String apiUrl in cobaltApiUrls) {
           try {
@@ -575,7 +547,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || downloadUrl == null) {
-        throw Exception('امکان استخراج لینک دانلود ویدیو از این پلتفرم وجود ندارد.');
+        throw Exception('امکان استخراج لینک دانلود ویدیو از این لینک وجود ندارد. لطفاً لینک دیگری آزمایش کنید.');
       }
 
       var dir = await getTemporaryDirectory();
@@ -652,9 +624,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!CancelToken.isCancel(e as DioException)) {
         if (mounted) {
           String errorMessage = e.toString();
-          if (errorMessage.contains('Failed host lookup')) {
-            errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی شبکه را بررسی کنید.';
-          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMessage, textDirection: TextDirection.rtl),
@@ -671,7 +640,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// صفحه پخش ویدیوی داخلی برنامه
 class VideoPlayerScreen extends StatefulWidget {
   final String filePath;
   const VideoPlayerScreen({super.key, required this.filePath});
@@ -748,7 +716,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 }
 
-// صفحه نمایش تبلیغ با قابلیت کلیک روی لینک خارجی (مثل واتساپ)
+// صفحه نمایش تبلیغ اصلاح شده برای باز کردن مطمئن لینک واتساپ
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -818,8 +786,13 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                     InkWell(
                       onTap: () async {
                         final uri = Uri.parse(widget.ad.link);
-                        if (await canLaunchUrl(uri)) {
+                        try {
+                          // اجرای مستقیم بدون چک کردن canLaunchUrl برای جلوگیری از بسته شدن دسترسی در اندروید
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } catch (e) {
+                          try {
+                            await launchUrl(uri, mode: LaunchMode.platformDefault);
+                          } catch (_) {}
                         }
                       },
                       child: Container(
@@ -891,7 +864,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
   }
 }
 
-// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -964,7 +936,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                     controller: _adTitleController,
                                     maxLines: 4,
                                     decoration: const InputDecoration(
-                                      labelText: 'متن تبلیغ (توضیحات، شماره تماس و...)',
+                                      labelText: 'متن تبلیغ',
                                       alignLabelWithHint: true,
                                     ),
                                   ),
@@ -999,19 +971,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           _adDurationController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('تبلیغ جدید با موفقیت اضافه شد!')),
+                                          const SnackBar(content: Text('تبلیغ جدید اضافه شد')),
                                         );
                                       }
                                     },
                                     icon: const Icon(Icons.add),
-                                    label: const Text('ثبت و افزودن تبلیغ'),
+                                    label: const Text('ثبت تبلیغ'),
                                   ),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text('لیست تبلیغات ثبت شده:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('لیست تبلیغات:', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           ListView.builder(
                             shrinkWrap: true,
@@ -1023,7 +995,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
                                   title: Text(ad.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  subtitle: Text('مدت: ${ad.duration} ثانیه ${ad.link.isNotEmpty ? "| دارای لینک" : ""}'),
+                                  subtitle: Text('مدت: ${ad.duration} ثانیه'),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -1069,9 +1041,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                   TextField(
                                     controller: _serverController,
                                     textDirection: TextDirection.ltr,
-                                    decoration: const InputDecoration(
-                                      labelText: 'آدرس کامل API',
-                                    ),
+                                    decoration: const InputDecoration(labelText: 'آدرس کامل API'),
                                   ),
                                   const SizedBox(height: 12),
                                   ElevatedButton.icon(
@@ -1082,19 +1052,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           _serverController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('سرور جدید اضافه شد!')),
+                                          const SnackBar(content: Text('سرور اضافه شد')),
                                         );
                                       }
                                     },
                                     icon: const Icon(Icons.dns),
-                                    label: const Text('افزودن سرور'),
+                                    label: const Text('افزودن'),
                                   ),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text('لیست سرورهای فعال:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('سرورهای فعال:', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           ListView.builder(
                             shrinkWrap: true,
@@ -1137,7 +1107,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'ورود اختصاصی ادمین',
+            'ورود ادمین',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
@@ -1169,11 +1139,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   _isLoggedIn = true;
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('خوش آمدید عبدالله عزیز! پنل مدیریت باز شد.')),
+                  const SnackBar(content: Text('خوش آمدید!')),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ایمیل یا رمز عبور اشتباه است!')),
+                  const SnackBar(content: Text('اطلاعات اشتباه است')),
                 );
               }
             },
@@ -1181,7 +1151,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('ورود به پنل مدیریت'),
+            child: const Text('ورود'),
           ),
         ],
       ),
