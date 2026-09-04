@@ -6,10 +6,12 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// لیست سرورهای عمومی و معتبر (با قابلیت پشتیبان‌گیری خودکار در صورت قطعی)
+// لیست جدید و گسترده‌تر از سرورهای عمومی و فعال کوبالت (Community Instances)
 const List<String> cobaltApiUrls = [
+  'https://co.wuk.sh/api/json',
   'https://coapi.kelig.me/api/json',
   'https://api.cobalt.best/api/json',
+  'https://cobalt.kwiatekmichal.pl/api/json',
 ];
 
 // مدل داده‌ای تبلیغات
@@ -180,7 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
 
-    // اصلاح خودکار خطاهای تایپی رایج مانند ttps:// به جای https://
     if (text.startsWith('ttps://')) {
       text = 'h$text';
     } else if (text.startsWith('ttp://')) {
@@ -235,8 +236,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       Response? response;
       bool success = false;
+      String lastError = '';
 
-      // تلاش برای ارتباط با سرورها به صورت زنجیره‌ای (Failover)
+      // تلاش برای ارتباط با سرورهای مختلف به صورت چرخشی (Failover)
       for (String apiUrl in cobaltApiUrls) {
         try {
           response = await dio.post(
@@ -256,13 +258,14 @@ class _HomeScreenState extends State<HomeScreen> {
             success = true;
             break;
           }
-        } catch (_) {
-          continue; // اگر سرور اول پاسخ نداد، به سراغ سرور بعدی می‌رود
+        } catch (err) {
+          lastError = err.toString();
+          continue; 
         }
       }
 
       if (!success || response == null) {
-        throw Exception('ارتباط با سرورهای دانلود برقرار نشد. لطفاً اینترنت خود را بررسی کنید.');
+        throw Exception('خطا در ارتباط با سرورها. جزئیات: $lastError');
       }
 
       final data = response.data;
@@ -298,13 +301,11 @@ class _HomeScreenState extends State<HomeScreen> {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
           errorMessage = 'خطا در اتصال به اینترنت. لطفاً اتصال خود را بررسی کنید.';
-        } else if (errorMessage.contains('status code of 400') || errorMessage.contains('status code of 403')) {
-          errorMessage = 'لینک وارد شده نامعتبر یا پشتیبانی نشده است.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            duration: const Duration(seconds: 6),
+            content: Text(errorMessage, textDirection: TextDirection.ltr),
+            duration: const Duration(seconds: 7),
             backgroundColor: Colors.red.shade800,
           ),
         );
