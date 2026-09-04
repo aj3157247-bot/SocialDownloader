@@ -64,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return Scaffold(
-      app: AppBar(
+      appBar: AppBar( // اصلاح شده از app: به appBar:
         title: Text(_currentIndex == 0 ? 'دانلودر هوشمند سوشال مدیا' : 'پنل مدیریت ادمین'),
         centerTitle: true,
       ),
@@ -120,7 +120,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
                 return;
               }
-              // شروع روند نمایش تبلیغات به نوبت قبل از دانلود
               _playAdsAndDownload(context);
             },
             icon: const Icon(Icons.download_rounded),
@@ -157,7 +156,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // متد اجرای تبلیغات فعال به نوبت
   void _playAdsAndDownload(BuildContext context) async {
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
@@ -173,14 +171,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // پس از اتمام تبلیغات، دانلود انجام می‌شود
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تبلیغات به اتمام رسید. ویدیوی شما دانلود شد!')),
     );
   }
 }
 
-// صفحه نمایشگر تبلیغ با تایمر شمارش معکوس
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -285,7 +281,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
   }
 }
 
-// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -326,7 +321,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               ],
             ),
             const Divider(),
-            // فرم افزودن تبلیغ جدید
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -417,7 +411,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       );
     }
 
-    // صفحه ورود ادمین با اطلاعات درخواستی شما
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
