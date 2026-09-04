@@ -102,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'لینک ویدیو (تیک‌تاک، یوتیوب، اینستاگرام، فیسبوک) را وارد کنید:',
+            'لینک کامل ویدیو (تیک‌تاک، یوتیوب، اینستاگرام) را وارد کنید:',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
@@ -111,12 +111,16 @@ class _HomeScreenState extends State<HomeScreen> {
             textDirection: TextDirection.ltr,
             textAlign: TextAlign.left,
             decoration: InputDecoration(
-              hintText: 'https://...',
+              hintText: 'https://youtu.be/... یا https://vt.tiktok.com/...',
               hintTextDirection: TextDirection.ltr,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               prefixIcon: const Icon(Icons.link),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => _urlController.clear(),
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -166,9 +170,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // متد هوشمند برای اصلاح و پاکسازی لینک‌های ناقص یا کپی‌شده از اشتراک‌گذاری
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
-    // پاکسازی متن‌های اضافی احتمالی اطراف لینک
+
+    // اگر لینک با اسلش شروع شود (مانند /ag9qyjg-pwY)
+    if (text.startsWith('/')) {
+      return 'https://youtu.be$text';
+    }
+
+    // جستجوی الگوهای استاندارد لینک در متن
     final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+');
     final match = regExp.firstMatch(text);
     
@@ -179,9 +190,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (text.startsWith('youtu.be/')) {
       return 'https://$text';
     }
+
+    // اگر متن فقط شناسه ویدیو یا مسیر کوتاه باشد
     if (!text.startsWith('http://') && !text.startsWith('https://')) {
+      if (text.length >= 10 && !text.contains(' ')) {
+        return 'https://youtu.be/$text';
+      }
       return 'https://$text';
     }
+
     return text;
   }
 
@@ -209,8 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 20);
-      dio.options.receiveTimeout = const Duration(seconds: 20);
+      dio.options.connectTimeout = const Duration(seconds: 25);
+      dio.options.receiveTimeout = const Duration(seconds: 25);
 
       final response = await dio.post(
         'https://api.cobalt.tools/api/json',
@@ -263,6 +280,8 @@ class _HomeScreenState extends State<HomeScreen> {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
           errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی اینترنت را بررسی کنید.';
+        } else if (errorMessage.contains('status code of 400')) {
+          errorMessage = 'لینک وارد شده نامعتبر یا پشتیبانی نشده است. لطفاً لینک کامل ویدیو را وارد کنید.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
