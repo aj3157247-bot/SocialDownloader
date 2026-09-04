@@ -100,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentDownloadUrl;
   String? _currentFilePath;
   int _receivedBytes = 0;
-  int _totalBytes = 0;
+  int _totalBytes = -1;
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? Column(
                   children: [
                     LinearProgressIndicator(
-                      value: _downloadProgress > 0 ? _downloadProgress : null,
+                      value: _totalBytes > 0 ? _downloadProgress : null,
                       backgroundColor: Colors.grey[800],
                       valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
                       minHeight: 8,
@@ -180,8 +180,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           _isPaused
-                              ? 'متوقف شده (${(_downloadProgress * 100).toStringAsFixed(0)}%)'
-                              : 'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%',
+                              ? 'متوقف شده'
+                              : (_totalBytes > 0
+                                  ? 'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%'
+                                  : 'در حال دانلود... (${(_receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)'),
                           style: const TextStyle(fontSize: 13, color: Colors.grey),
                         ),
                         Row(
@@ -312,7 +314,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final response = await dio.get<ResponseBody>(
         _currentDownloadUrl!,
         options: Options(
-          headers: {'range': 'bytes=$_receivedBytes-'},
+          headers: {
+            'range': 'bytes=$_receivedBytes-',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          },
           responseType: ResponseType.stream,
         ),
         cancelToken: _cancelToken,
@@ -374,6 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isPaused = false;
       _downloadProgress = 0.0;
       _receivedBytes = 0;
+      _totalBytes = -1;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('دانلود لغو شد')),
@@ -429,6 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isPaused = false;
       _downloadProgress = 0.0;
       _receivedBytes = 0;
+      _totalBytes = -1;
     });
 
     try {
@@ -502,7 +509,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
         final response = await dio.get<ResponseBody>(
           downloadUrl,
-          options: Options(responseType: ResponseType.stream),
+          options: Options(
+            responseType: ResponseType.stream,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+          ),
           cancelToken: _cancelToken,
         );
 
