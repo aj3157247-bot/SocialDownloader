@@ -268,20 +268,37 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             );
                           },
-                          trailing: IconButton(
-                            icon: const Icon(Icons.share, color: Colors.greenAccent),
-                            onPressed: () async {
-                              try {
-                                await Share.shareXFiles(
-                                  [XFile(item.filePath)],
-                                  text: 'دانلود شده از اپلیکیشن Social Downloader Pro',
-                                );
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('خطا در اشتراک‌گذاری: $e')),
-                                );
-                              }
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.share, color: Colors.greenAccent),
+                                onPressed: () async {
+                                  try {
+                                    await Share.shareXFiles(
+                                      [XFile(item.filePath)],
+                                      text: 'دانلود شده از اپلیکیشن Social Downloader Pro',
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('خطا در اشتراک‌گذاری: $e')),
+                                    );
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                onPressed: () {
+                                  setState(() {
+                                    downloadedHistory.removeAt(index);
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('ویدیو از لیست صفحه پاک شد (فایل در گوشی باقی ماند)')),
+                                  );
+                                },
+                                tooltip: 'حذف از لیست',
+                              ),
+                            ],
                           ),
                         ),
                       );
