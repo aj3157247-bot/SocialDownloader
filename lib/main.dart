@@ -190,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // استخراج شناسه ویدیو
       var videoId = VideoId(url);
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = manifest.muxed.withHighestQuality();
+      var streamInfo = manifest.muxed.sortByVideoQuality().last;
 
       if (streamInfo == null) {
         throw Exception('کیفیت مناسبی برای دانلود یافت نشد.');
