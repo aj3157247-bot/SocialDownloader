@@ -23,24 +23,38 @@ List<String> cobaltApiUrls = [
   'https://co.wuk.sh/api/json',
 ];
 
-// مدل داده‌ای تبلیغات
+// مدل داده‌ای تبلیغات (با پشتیبانی از لینک و متن کامل)
 class AdModel {
   String id;
   String title;
+  String link;
   int duration;
   bool isActive;
 
   AdModel({
     required this.id,
     required this.title,
+    this.link = '',
     required this.duration,
     this.isActive = true,
   });
 }
 
 List<AdModel> globalAds = [
-  AdModel(id: '1', title: 'تبلیغ اول: معرفی کانال تلگرام ما', duration: 5, isActive: true),
-  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه سرویس‌ها', duration: 5, isActive: true),
+  AdModel(
+    id: '1', 
+    title: 'تبلیغ اول: معرفی کانال تلگرام ما\nارتباط با ما: 09123456789\nایمیل: support@site.com', 
+    link: 'https://t.me/example',
+    duration: 5, 
+    isActive: true,
+  ),
+  AdModel(
+    id: '2', 
+    title: 'تبلیغ دوم: تخفیف ویژه سرویس‌ها', 
+    link: '',
+    duration: 5, 
+    isActive: true,
+  ),
 ];
 
 void main() {
@@ -76,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
   bool _isDownloading = false;
-  double _downloadProgress = 0.0; // درصد پیشرفت دانلود
+  double _downloadProgress = 0.0;
 
   @override
   Widget build(BuildContext context) {
@@ -345,7 +359,6 @@ class _HomeScreenState extends State<HomeScreen> {
         var dir = await getTemporaryDirectory();
         var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
         
-        // دانلود همراه با محاسبه درصد پیشرفت واقعی
         await dio.download(
           downloadUrl,
           filePath,
@@ -358,10 +371,8 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
 
-        // ذخیره در گالری
         await Gal.putVideo(filePath);
 
-        // افزودن به لیست تاریخچه برنامه
         setState(() {
           downloadedHistory.add(
             DownloadedVideoModel(
@@ -404,7 +415,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// صفحه نمایش تبلیغ با تایمر
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -456,51 +466,63 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
           automaticallyImplyLeading: false,
         ),
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.campaign_rounded, size: 90, color: Colors.amberAccent),
-                const SizedBox(height: 24),
-                Text(
-                  widget.ad.title,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'لطفاً برای حمایت از اپلیکیشن تا اتمام تبلیغ صبور باشید...',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 45),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: _canClose ? Colors.green : Colors.orange),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.campaign_rounded, size: 90, color: Colors.amberAccent),
+                  const SizedBox(height: 24),
+                  // نمایش متن چندخطی تبلیغ (شامل لینک، ایمیل، شماره و توضیحات)
+                  SelectableText(
+                    widget.ad.title,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, height: 1.5),
+                    textAlign: TextAlign.center,
                   ),
-                  child: Text(
-                    _canClose ? 'تبلیغ به پایان رسید' : 'تایم باقی‌مانده: $_timeLeft ثانیه',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: _canClose ? Colors.greenAccent : Colors.orangeAccent,
+                  if (widget.ad.link.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      widget.ad.link,
+                      style: const TextStyle(fontSize: 14, color: Colors.blueAccent),
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.ltr,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  const Text(
+                    'لطفاً برای حمایت از اپلیکیشن تا اتمام تبلیغ صبور باشید...',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 35),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: _canClose ? Colors.green : Colors.orange),
+                    ),
+                    child: Text(
+                      _canClose ? 'تبلیغ به پایان رسید' : 'تایم باقی‌مانده: $_timeLeft ثانیه',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _canClose ? Colors.greenAccent : Colors.orangeAccent,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 45),
-                ElevatedButton(
-                  onPressed: _canClose ? () => Navigator.pop(context) : null,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(height: 35),
+                  ElevatedButton(
+                    onPressed: _canClose ? () => Navigator.pop(context) : null,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(_canClose ? 'ادامه دانلود ویدیو' : 'صبر کنید تا تایم تمام شود...'),
                   ),
-                  child: Text(_canClose ? 'ادامه دانلود ویدیو' : 'صبر کنید تا تایم تمام شود...'),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -509,7 +531,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
   }
 }
 
-// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -522,8 +543,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggedIn = false;
 
+  // کنترلرهای فرم افزودن تبلیغ جدید
   final TextEditingController _adTitleController = TextEditingController();
+  final TextEditingController _adLinkController = TextEditingController();
   final TextEditingController _adDurationController = TextEditingController();
+  
   final TextEditingController _serverController = TextEditingController();
 
   @override
@@ -577,9 +601,23 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                 children: [
                                   const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 8),
+                                  // فیلد چندخطی برای متن، شماره، ایمیل یا لینک در متن
                                   TextField(
                                     controller: _adTitleController,
-                                    decoration: const InputDecoration(labelText: 'متن یا عنوان تبلیغ'),
+                                    maxLines: 4,
+                                    decoration: const InputDecoration(
+                                      labelText: 'متن تبلیغ (شامل توضیحات، شماره تماس، ایمیل یا لینک)',
+                                      alignLabelWithHint: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // فیلد تخصصی برای لینک وب‌سایت یا کانال مقصد
+                                  TextField(
+                                    controller: _adLinkController,
+                                    textDirection: TextDirection.ltr,
+                                    decoration: const InputDecoration(
+                                      labelText: 'لینک مقصد (URL - اختیاری)',
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   TextField(
@@ -595,10 +633,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           globalAds.add(AdModel(
                                             id: DateTime.now().millisecondsSinceEpoch.toString(),
                                             title: _adTitleController.text,
+                                            link: _adLinkController.text.trim(),
                                             duration: int.tryParse(_adDurationController.text) ?? 5,
                                             isActive: true,
                                           ));
                                           _adTitleController.clear();
+                                          _adLinkController.clear();
                                           _adDurationController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
@@ -625,8 +665,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
-                                  title: Text(ad.title),
-                                  subtitle: Text('مدت زمان: ${ad.duration} ثانیه'),
+                                  title: Text(ad.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  subtitle: Text('مدت: ${ad.duration} ثانیه ${ad.link.isNotEmpty ? "| دارای لینک" : ""}'),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -734,7 +774,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     }
 
     return Padding(
-      pyadding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
