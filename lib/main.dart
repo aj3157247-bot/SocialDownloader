@@ -6,8 +6,8 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// لیست گسترده‌ای از سرورهای عمومی و جایگزین کوبالت
-const List<String> cobaltApiUrls = [
+// لیست قابل تغییر سرورهای API (قابل مدیریت از پنل ادمین)
+List<String> cobaltApiUrls = [
   'https://co.wuk.sh/api/json',
   'https://coapi.kelig.me/api/json',
   'https://api.cobalt.best/api/json',
@@ -179,11 +179,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها (رفع خطاهای تایپی و کاراکترهای اضافی)
+  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
 
-    // حذف فاصله‌ها یا کاراکترهای نامربوط احتمالی در ابتدا
     if (text.startsWith('ttps://')) {
       text = 'h$text';
     } else if (text.startsWith('ttp://')) {
@@ -269,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || response == null) {
-        throw Exception('امکان اتصال به سرورها وجود ندارد. (احتمال فیلترینگ یا قطعی سرورها). لطفاً از ابزار تغییر IP استفاده کنید.');
+        throw Exception('امکان اتصال به هیچ‌کدام از سرورها وجود ندارد. لطفاً از طریق پنل ادمین یک سرور یا پروکسی جدید اضافه کنید.');
       }
 
       final data = response.data;
@@ -304,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
-          errorMessage = 'خطا در اتصال: سرورهای واسط فیلتر یا در دسترس نیستند. لطفاً VPN خود را روشن کنید و دوباره تلاش کنید.';
+          errorMessage = 'خطا در اتصال: سرورها مسدود یا غیرقابل دسترس هستند. لطفاً از پنل ادمین سرور جدید اضافه کنید یا VPN خود را بررسی نمایید.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -442,120 +441,219 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggedIn = false;
 
+  // کنترلرهای افزودن تبلیغ
   final TextEditingController _adTitleController = TextEditingController();
   final TextEditingController _adDurationController = TextEditingController();
+
+  // کنترلر افزودن سرور جدید
+  final TextEditingController _serverController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
     if (_isLoggedIn) {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('مدیریت تبلیغات هوشمند', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.logout, color: Colors.red),
-                  onPressed: () {
-                    setState(() {
-                      _isLoggedIn = false;
-                      _emailController.clear();
-                      _passwordController.clear();
-                    });
-                  },
-                ),
-              ],
-            ),
-            const Divider(),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _adTitleController,
-                      decoration: const InputDecoration(labelText: 'متن یا عنوان تبلیغ'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _adDurationController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'تایم تبلیغ به ثانیه (مثلاً 10)'),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        if (_adTitleController.text.isNotEmpty && _adDurationController.text.isNotEmpty) {
-                          setState(() {
-                            globalAds.add(AdModel(
-                              id: DateTime.now().millisecondsSinceEpoch.toString(),
-                              title: _adTitleController.text,
-                              duration: int.tryParse(_adDurationController.text) ?? 5,
-                              isActive: true,
-                            ));
-                            _adTitleController.clear();
-                            _adDurationController.clear();
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('تبلیغ جدید با موفقیت اضافه شد!')),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('ثبت و افزودن تبلیغ'),
-                    ),
-                  ],
-                ),
+      return DefaultTabController(
+        length: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('پنل مدیریت پیشرفته', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.red),
+                    onPressed: () {
+                      setState(() {
+                        _isLoggedIn = false;
+                        _emailController.clear();
+                        _passwordController.clear();
+                      });
+                    },
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            const Text('لیست تبلیغات ثبت شده:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.builder(
-                itemCount: globalAds.length,
-                itemBuilder: (context, index) {
-                  final ad = globalAds[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      title: Text(ad.title),
-                      subtitle: Text('مدت زمان: ${ad.duration} ثانیه'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: 8),
+              const TabBar(
+                tabs: [
+                  Tab(text: 'مدیریت تبلیغات'),
+                  Tab(text: 'مدیریت سرورهای API'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    // تب اول: مدیریت تبلیغات
+                    SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Switch(
-                            value: ad.isActive,
-                            onChanged: (val) {
-                              setState(() {
-                                ad.isActive = val;
-                              });
-                            },
+                          Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _adTitleController,
+                                    decoration: const InputDecoration(labelText: 'متن یا عنوان تبلیغ'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _adDurationController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(labelText: 'تایم تبلیغ به ثانیه (مثلاً 5)'),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      if (_adTitleController.text.isNotEmpty && _adDurationController.text.isNotEmpty) {
+                                        setState(() {
+                                          globalAds.add(AdModel(
+                                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                            title: _adTitleController.text,
+                                            duration: int.tryParse(_adDurationController.text) ?? 5,
+                                            isActive: true,
+                                          ));
+                                          _adTitleController.clear();
+                                          _adDurationController.clear();
+                                        });
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('تبلیغ جدید با موفقیت اضافه شد!')),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('ثبت و افزودن تبلیغ'),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.redAccent),
-                            onPressed: () {
-                              setState(() {
-                                globalAds.removeAt(index);
-                              });
+                          const SizedBox(height: 10),
+                          const Text('لیست تبلیغات ثبت شده:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: globalAds.length,
+                            itemBuilder: (context, index) {
+                              final ad = globalAds[index];
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  title: Text(ad.title),
+                                  subtitle: Text('مدت زمان: ${ad.duration} ثانیه'),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Switch(
+                                        value: ad.isActive,
+                                        onChanged: (val) {
+                                          setState(() {
+                                            ad.isActive = val;
+                                          });
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                        onPressed: () {
+                                          setState(() {
+                                            globalAds.removeAt(index);
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
                             },
                           ),
                         ],
                       ),
                     ),
-                  );
-                },
+
+                    // تب دوم: مدیریت سرورهای API
+                    SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Text('افزودن سرور API جدید (کوبالت/پروکسی)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _serverController,
+                                    textDirection: TextDirection.ltr,
+                                    decoration: const InputDecoration(
+                                      labelText: 'آدرس کامل API (مثلاً https://.../api/json)',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      if (_serverController.text.isNotEmpty) {
+                                        setState(() {
+                                          cobaltApiUrls.add(_serverController.text.trim());
+                                          _serverController.clear();
+                                        });
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('سرور جدید به لیست اضافه شد!')),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.dns),
+                                    label: const Text('افزودن سرور'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text('لیست سرورهای فعال فعلی:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: cobaltApiUrls.length,
+                            itemBuilder: (context, index) {
+                              final serverUrl = cobaltApiUrls[index];
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  title: Text(serverUrl, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 13)),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                    onPressed: () {
+                                      setState(() {
+                                        cobaltApiUrls.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
