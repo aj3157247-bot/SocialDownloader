@@ -6,6 +6,9 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
+// آدرس API کوبالت (می‌توانید آن را به سرور شخصی یا نمونه جایگزین تغییر دهید)
+const String cobaltApiUrl = 'https://api.cobalt.tools/api/json';
+
 // مدل داده‌ای تبلیغات
 class AdModel {
   String id;
@@ -111,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
             textDirection: TextDirection.ltr,
             textAlign: TextAlign.left,
             decoration: InputDecoration(
-              hintText: 'https://youtu.be/... یا https://vt.tiktok.com/...',
+              hintText: 'https://vt.tiktok.com/... یا https://youtu.be/...',
               hintTextDirection: TextDirection.ltr,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -170,33 +173,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // متد هوشمند برای اصلاح و پاکسازی لینک‌های ناقص یا کپی‌شده از اشتراک‌گذاری
+  // متد استخراج و اعتبارسنجی لینک
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
 
-    // اگر لینک با اسلش شروع شود (مانند /ag9qyjg-pwY)
     if (text.startsWith('/')) {
       return 'https://youtu.be$text';
     }
 
-    // جستجوی الگوهای استاندارد لینک در متن
-    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+');
+    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
     final match = regExp.firstMatch(text);
     
     if (match != null) {
       text = match.group(0)!;
-    }
-
-    if (text.startsWith('youtu.be/')) {
-      return 'https://$text';
-    }
-
-    // اگر متن فقط شناسه ویدیو یا مسیر کوتاه باشد
-    if (!text.startsWith('http://') && !text.startsWith('https://')) {
-      if (text.length >= 10 && !text.contains(' ')) {
-        return 'https://youtu.be/$text';
-      }
-      return 'https://$text';
     }
 
     return text;
@@ -207,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
-    // نمایش تبلیغات فعال پیش از شروع دانلود
+    // نمایش تبلیغات پیش از دانلود
     if (activeAds.isNotEmpty) {
       for (var ad in activeAds) {
         await Navigator.push(
@@ -230,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.receiveTimeout = const Duration(seconds: 25);
 
       final response = await dio.post(
-        'https://api.cobalt.tools/api/json',
+        cobaltApiUrl,
         options: Options(
           headers: {
             'Accept': 'application/json',
@@ -270,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _urlController.clear();
           }
         } else {
-          throw Exception('فرمت پاسخ سرور ناشناخته است یا لینک دانلود یافت نشد.');
+          throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
         }
       } else {
         throw Exception('کد خطای سرور: ${response.statusCode}');
@@ -279,9 +268,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
-          errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی اینترنت را بررسی کنید.';
+          errorMessage = 'خطا در اتصال به اینترنت. لطفاً اتصال خود را بررسی کنید.';
         } else if (errorMessage.contains('status code of 400')) {
-          errorMessage = 'لینک وارد شده نامعتبر یا پشتیبانی نشده است. لطفاً لینک کامل ویدیو را وارد کنید.';
+          errorMessage = 'سرور اصلی درخواست را مسدود کرد (خطای 400). نیاز به استفاده از هاست/سرور شخصی (Self-hosted) کوبالت است.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -301,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// صفحه نمایش تبلیغ با تایمر شمارش معکوس
+// صفحه نمایش تبلیغ با تایمر
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
