@@ -27,7 +27,7 @@ jobs:
           channel: 'stable'
 
       - name: Create platform files if missing
-        run: flutter create . --platforms=android --org com.abdullah.socialdownloader
+        run: flutter create . --project-name=social_downloader --platforms=android --org com.abdullah.socialdownloader
 
       - name: Install dependencies
         run: flutter pub get
