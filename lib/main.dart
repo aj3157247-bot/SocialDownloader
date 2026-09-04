@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
 
 // مدل داده‌ای تبلیغات
 class AdModel {
@@ -20,7 +24,7 @@ class AdModel {
 // لیست سراسری تبلیغات (مدیریت شده توسط ادمین)
 List<AdModel> globalAds = [
   AdModel(id: '1', title: 'تبلیغ اول: معرفی کانال تلگرام ما', duration: 5, isActive: true),
-  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه خرید هاست', duration: 7, isActive: true),
+  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه خرید هاست', duration: 5, isActive: true),
 ];
 
 void main() {
@@ -55,6 +59,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
+  bool _isDownloading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar( // اصلاح شده از app: به appBar:
+      appBar: AppBar(
         title: Text(_currentIndex == 0 ? 'دانلودر هوشمند سوشال مدیا' : 'پنل مدیریت ادمین'),
         centerTitle: true,
       ),
@@ -97,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'لینک ویدیو (یوتیوب، اینستاگرام، تیک‌تاک، فیسبوک) را وارد کنید:',
+            'لینک ویدیو (یوتیوب، شورتس، اینستاگرام) را وارد کنید:',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
@@ -112,25 +117,27 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () {
-              if (_urlController.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('لطفاً یک لینک معتبر وارد کنید')),
-                );
-                return;
-              }
-              _playAdsAndDownload(context);
-            },
-            icon: const Icon(Icons.download_rounded),
-            label: const Text('شروع دانلود و ذخیره در گالری'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
+          _isDownloading
+              ? const Center(child: CircularProgressIndicator())
+              : ElevatedButton.icon(
+                  onPressed: () {
+                    if (_urlController.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('لطفاً یک لینک معتبر وارد کنید')),
+                      );
+                      return;
+                    }
+                    _playAdsAndDownload(context, _urlController.text.trim());
+                  },
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('شروع دانلود و ذخیره در گالری'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
@@ -156,7 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _playAdsAndDownload(BuildContext context) async {
+  // نمایش تبلیغات به نوبت قبل از شروع دانلود واقعی
+  void _playAdsAndDownload(BuildContext context, String url) async {
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
     if (activeAds.isNotEmpty) {
@@ -171,12 +179,62 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تبلیغات به اتمام رسید. ویدیوی شما دانلود شد!')),
-    );
+    // شروع عملیات دانلود واقعی پس از اتمام تبلیغات
+    setState(() {
+      _isDownloading = true;
+    });
+
+    try {
+      final yt = YoutubeExplode();
+      
+      // استخراج شناسه ویدیو
+      var videoId = VideoId(url);
+      var manifest = await yt.videos.streamsClient.getManifest(videoId);
+      var streamInfo = manifest.muxed.withHighestQuality();
+
+      if (streamInfo == null) {
+        throw Exception('کیفیت مناسبی برای دانلود یافت نشد.');
+      }
+
+      var stream = yt.videos.streamsClient.get(streamInfo);
+
+      // ذخیره موقت در حافظه دستگاه
+      var dir = await getTemporaryDirectory();
+      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+      var file = File(filePath);
+      var fileStream = file.openWrite();
+
+      await stream.pipe(fileStream);
+      await fileStream.flush();
+      await fileStream.close();
+      yt.close();
+
+      // ذخیره مستقیم در گالری گوشی با استفاده از پکیج Gal
+      await Gal.putVideo(filePath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+        );
+        _urlController.clear();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در دانلود: لینک نامعتبر است یا اینترنت قطع می‌باشد')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
   }
 }
 
+// صفحه نمایش تبلیغ با تایمر شمارش معکوس
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -281,6 +339,7 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
   }
 }
 
+// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
