@@ -6,8 +6,11 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// استفاده از سرور آزاد و عمومی جامعه (Community Instance) برای دور زدن محدودیت سرور اصلی
-const String cobaltApiUrl = 'https://coapi.kelig.me/api/json';
+// لیست سرورهای عمومی و معتبر (با قابلیت پشتیبان‌گیری خودکار در صورت قطعی)
+const List<String> cobaltApiUrls = [
+  'https://coapi.kelig.me/api/json',
+  'https://api.cobalt.best/api/json',
+];
 
 // مدل داده‌ای تبلیغات
 class AdModel {
@@ -173,19 +176,31 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // متد استخراج و اعتبارسنجی لینک
+  // متد پیشرفته استخراج و اصلاح خودکار لینک‌ها (رفع خطاهای تایپی پروتکل)
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
+
+    // اصلاح خودکار خطاهای تایپی رایج مانند ttps:// به جای https://
+    if (text.startsWith('ttps://')) {
+      text = 'h$text';
+    } else if (text.startsWith('ttp://')) {
+      text = 'h$text';
+    } else if (text.startsWith('tp://')) {
+      text = 'ht$text';
+    }
 
     if (text.startsWith('/')) {
       return 'https://youtu.be$text';
     }
 
-    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
+    final regExp = RegExp(r'https?:\/\/[^\s]+|ttps?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
     final match = regExp.firstMatch(text);
     
     if (match != null) {
       text = match.group(0)!;
+      if (text.startsWith('ttps://')) {
+        text = 'h$text';
+      }
     }
 
     return text;
@@ -218,51 +233,65 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.connectTimeout = const Duration(seconds: 25);
       dio.options.receiveTimeout = const Duration(seconds: 25);
 
-      final response = await dio.post(
-        cobaltApiUrl,
-        options: Options(
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
-        ),
-        data: {
-          'url': formattedUrl,
-        },
-      );
+      Response? response;
+      bool success = false;
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        String? downloadUrl;
-
-        if (data['status'] == 'stream' || data['status'] == 'redirect') {
-          downloadUrl = data['url'];
-        } else if (data['status'] == 'picker') {
-          final picker = data['picker'] as List;
-          if (picker.isNotEmpty) {
-            downloadUrl = picker[0]['url'];
+      // تلاش برای ارتباط با سرورها به صورت زنجیره‌ای (Failover)
+      for (String apiUrl in cobaltApiUrls) {
+        try {
+          response = await dio.post(
+            apiUrl,
+            options: Options(
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              },
+            ),
+            data: {
+              'url': formattedUrl,
+            },
+          );
+          if (response.statusCode == 200) {
+            success = true;
+            break;
           }
+        } catch (_) {
+          continue; // اگر سرور اول پاسخ نداد، به سراغ سرور بعدی می‌رود
         }
+      }
 
-        if (downloadUrl != null) {
-          var dir = await getTemporaryDirectory();
-          var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-          
-          await dio.download(downloadUrl, filePath);
-          await Gal.putVideo(filePath);
+      if (!success || response == null) {
+        throw Exception('ارتباط با سرورهای دانلود برقرار نشد. لطفاً اینترنت خود را بررسی کنید.');
+      }
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-            );
-            _urlController.clear();
-          }
-        } else {
-          throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
+      final data = response.data;
+      String? downloadUrl;
+
+      if (data['status'] == 'stream' || data['status'] == 'redirect') {
+        downloadUrl = data['url'];
+      } else if (data['status'] == 'picker') {
+        final picker = data['picker'] as List;
+        if (picker.isNotEmpty) {
+          downloadUrl = picker[0]['url'];
+        }
+      }
+
+      if (downloadUrl != null) {
+        var dir = await getTemporaryDirectory();
+        var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+        
+        await dio.download(downloadUrl, filePath);
+        await Gal.putVideo(filePath);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+          );
+          _urlController.clear();
         }
       } else {
-        throw Exception('کد خطای سرور: ${response.statusCode}');
+        throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
       }
     } catch (e) {
       if (mounted) {
@@ -270,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (errorMessage.contains('Failed host lookup')) {
           errorMessage = 'خطا در اتصال به اینترنت. لطفاً اتصال خود را بررسی کنید.';
         } else if (errorMessage.contains('status code of 400') || errorMessage.contains('status code of 403')) {
-          errorMessage = 'خطای ارتباط با سرور واسط. لطفاً دوباره تلاش کنید.';
+          errorMessage = 'لینک وارد شده نامعتبر یا پشتیبانی نشده است.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
