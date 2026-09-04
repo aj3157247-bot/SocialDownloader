@@ -202,7 +202,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      // تنظیم تایم‌اوت برای جلوگیری از معطلی طولانی
       dio.options.connectTimeout = const Duration(seconds: 15);
       dio.options.receiveTimeout = const Duration(seconds: 15);
 
@@ -254,7 +253,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // نمایش خطای دقیق برای عیب‌یابی
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('خطای دقیق: $e'),
@@ -508,4 +506,61 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       );
     }
 
-    return, // (Wait, standard syntax check: return Padding...)
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'ورود اختصاصی ادمین',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _emailController,
+            decoration: InputDecoration(
+              labelText: 'ایمیل ادمین',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(Icons.email),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'رمز عبور',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(Icons.lock),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              if (_emailController.text.trim() == 'abdullahjafari712@gmail.com' &&
+                  _passwordController.text == '05050505') {
+                setState(() {
+                  _isLoggedIn = true;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('خوش آمدید عبدالله عزیز! پنل مدیریت باز شد.')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('ایمیل یا رمز عبور اشتباه است!')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('ورود به پنل مدیریت'),
+          ),
+        ],
+      ),
+    );
+  }
+}
