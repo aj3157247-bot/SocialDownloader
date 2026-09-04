@@ -17,11 +17,33 @@ class DownloadedVideoModel {
 
 List<DownloadedVideoModel> downloadedHistory = [];
 
-// لیست سرورهای معتبر و فعال Cobalt برای یوتیوب و اینستاگرام
+class DownloadingTaskModel {
+  final String id;
+  final String url;
+  double progress;
+  int receivedBytes;
+  int totalBytes;
+  bool isPaused;
+  CancelToken cancelToken;
+  String? filePath;
+
+  DownloadingTaskModel({
+    required this.id,
+    required this.url,
+    this.progress = 0.0,
+    this.receivedBytes = 0,
+    this.totalBytes = -1,
+    this.isPaused = false,
+    required this.cancelToken,
+    this.filePath,
+  });
+}
+
 List<String> cobaltApiUrls = [
-  'https://cobalt-api.kwiatek.xyz/',
-  'https://api.cobalt.best/',
+  'https://api.cobalt.tools/api/json',
   'https://co.wuk.sh/api/json',
+  'https://cobalt.kwiatek.xyz/api/json',
+  'https://api.cobalt.best/api/json',
 ];
 
 class AdModel {
@@ -83,15 +105,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
   
-  bool _isDownloading = false;
-  bool _isPaused = false;
-  double _downloadProgress = 0.0;
-  
-  CancelToken? _cancelToken;
-  String? _currentDownloadUrl;
-  String? _currentFilePath;
-  int _receivedBytes = 0;
-  int _totalBytes = -1;
+  // لیست مدیریت دانلودهای همزمان
+  final List<DownloadingTaskModel> _activeDownloads = [];
 
   @override
   Widget build(BuildContext context) {
@@ -166,12 +181,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'دانلود هوشمند ویدیوها',
+                        'دانلود همزمان و هوشمند',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'پشتیبانی از تیک‌تاک، اینستاگرام و یوتیوب • ذخیره مستقیم در گالری گوشی',
+                        'پشتیبانی از تیک‌تاک، اینستاگرام و یوتیوب • دانلود چند ویدیو به صورت همزمان',
                         style: TextStyle(fontSize: 12, color: Colors.white70, height: 1.3),
                       ),
                     ],
@@ -186,90 +201,125 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _urlController,
-            textDirection: TextDirection.ltr,
-            textAlign: TextAlign.left,
-            decoration: InputDecoration(
-              hintText: 'https://instagram.com/... یا https://youtu.be/...',
-              hintTextDirection: TextDirection.ltr,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              prefixIcon: const Icon(Icons.link),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () => _urlController.clear(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _isDownloading
-              ? Column(
-                  children: [
-                    LinearProgressIndicator(
-                      value: _totalBytes > 0 ? _downloadProgress : null,
-                      backgroundColor: Colors.grey[800],
-                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                      minHeight: 8,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _isPaused
-                              ? 'متوقف شده'
-                              : (_totalBytes > 0
-                                  ? 'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%'
-                                  : 'در حال دانلود... (${(_receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)'),
-                          style: const TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-                        Row(
-                          children: [
-                            if (_isPaused)
-                              IconButton(
-                                icon: const Icon(Icons.play_arrow, color: Colors.greenAccent),
-                                onPressed: _resumeDownload,
-                                tooltip: 'ادامه',
-                              )
-                            else
-                              IconButton(
-                                icon: const Icon(Icons.pause, color: Colors.orangeAccent),
-                                onPressed: _pauseDownload,
-                                tooltip: 'توقف',
-                              ),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.redAccent),
-                              onPressed: _cancelDownload,
-                              tooltip: 'کنسل',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                )
-              : ElevatedButton.icon(
-                  onPressed: () {
-                    if (_urlController.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('لطفاً یک لینک معتبر وارد کنید')),
-                      );
-                      return;
-                    }
-                    _playAdsAndDownload(context, _urlController.text.trim());
-                  },
-                  icon: const Icon(Icons.download_rounded),
-                  label: const Text('شروع دانلود و ذخیره در گالری'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _urlController,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.left,
+                  decoration: InputDecoration(
+                    hintText: 'https://instagram.com/... یا https://youtu.be/...',
+                    hintTextDirection: TextDirection.ltr,
+                    border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
+                    ),
+                    prefixIcon: const Icon(Icons.link),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => _urlController.clear(),
                     ),
                   ),
                 ),
-          const SizedBox(height: 20),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                onPressed: () {
+                  if (_urlController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('لطفاً یک لینک معتبر وارد کنید')),
+                    );
+                    return;
+                  }
+                  String urlToDownload = _urlController.text.trim();
+                  _urlController.clear();
+                  _playAdsAndStartDownload(context, urlToDownload);
+                },
+                icon: const Icon(Icons.download_rounded),
+                label: const Text('افزودن به صف دانلود'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_activeDownloads.isNotEmpty) ...[
+            const Text(
+              'دانلودهای فعال:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orangeAccent),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 130,
+              child: ListView.builder(
+                itemCount: _activeDownloads.length,
+                itemBuilder: (context, index) {
+                  final task = _activeDownloads[index];
+                  return Card(
+                    color: Colors.grey[850],
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  task.url,
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textDirection: TextDirection.ltr,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
+                                onPressed: () {
+                                  task.cancelToken.cancel('cancelled');
+                                  setState(() {
+                                    _activeDownloads.removeAt(index);
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          LinearProgressIndicator(
+                            value: task.totalBytes > 0 ? task.progress : null,
+                            backgroundColor: Colors.grey[800],
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                            minHeight: 6,
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                task.isPaused
+                                    ? 'متوقف شده'
+                                    : (task.totalBytes > 0
+                                        ? 'در حال دانلود: ${(task.progress * 100).toStringAsFixed(0)}%'
+                                        : 'در حال دریافت... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)'),
+                                style: const TextStyle(fontSize: 11, color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
           const Text(
             'ویدیوهای دانلود شده اخیر در این برنامه (برای پخش لمس کنید):',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
@@ -349,99 +399,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _pauseDownload() {
-    _cancelToken?.cancel('paused');
-    setState(() {
-      _isPaused = true;
-    });
-  }
-
-  void _resumeDownload() async {
-    setState(() {
-      _isPaused = false;
-    });
-    try {
-      final dio = Dio();
-      _cancelToken = CancelToken();
-      
-      final file = File(_currentFilePath!);
-      final raf = await file.open(mode: FileMode.append);
-
-      final response = await dio.get<ResponseBody>(
-        _currentDownloadUrl!,
-        options: Options(
-          headers: {
-            'range': 'bytes=$_receivedBytes-',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
-          responseType: ResponseType.stream,
-        ),
-        cancelToken: _cancelToken,
-      );
-
-      response.data!.stream.listen(
-        (data) {
-          if (_isPaused) return;
-          raf.writeFromSync(data);
-          _receivedBytes += data.length;
-          if (mounted) {
-            setState(() {
-              if (_totalBytes > 0) {
-                _downloadProgress = _receivedBytes / _totalBytes;
-              }
-            });
-          }
-        },
-        onDone: () async {
-          await raf.close();
-          if (!_isPaused) {
-            await Gal.putVideo(_currentFilePath!);
-            setState(() {
-              downloadedHistory.add(
-                DownloadedVideoModel(
-                  filePath: _currentFilePath!,
-                  date: DateTime.now().toString().substring(0, 19),
-                ),
-              );
-              _isDownloading = false;
-            });
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-              );
-              _urlController.clear();
-            }
-          }
-        },
-        onError: (e) async {
-          await raf.close();
-          if (!CancelToken.isCancel(e as DioException)) {
-            setState(() => _isDownloading = false);
-          }
-        },
-        cancelOnError: true,
-      );
-    } catch (e) {
-      if (!CancelToken.isCancel(e as DioException)) {
-        setState(() => _isDownloading = false);
-      }
-    }
-  }
-
-  void _cancelDownload() {
-    _cancelToken?.cancel('cancelled');
-    setState(() {
-      _isDownloading = false;
-      _isPaused = false;
-      _downloadProgress = 0.0;
-      _receivedBytes = 0;
-      _totalBytes = -1;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('دانلود لغو شد')),
-    );
-  }
-
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
     final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
@@ -452,7 +409,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return text;
   }
 
-  void _playAdsAndDownload(BuildContext context, String rawUrl) async {
+  void _playAdsAndStartDownload(BuildContext context, String rawUrl) async {
     String formattedUrl = _extractValidUrl(rawUrl);
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
@@ -468,28 +425,111 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
+    // ایجاد یک تسک جدید برای دانلود همزمان
+    final task = DownloadingTaskModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      url: formattedUrl,
+      cancelToken: CancelToken(),
+    );
+
     setState(() {
-      _isDownloading = true;
-      _isPaused = false;
-      _downloadProgress = 0.0;
-      _receivedBytes = 0;
-      _totalBytes = -1;
+      _activeDownloads.add(task);
     });
 
+    // شروع فرآیند دانلود در پس‌زمینه (بدون مسدودسازی سایر دانلودها)
+    _startConcurrentDownload(task);
+  }
+
+  Future<void> _startConcurrentDownload(DownloadingTaskModel task) async {
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 20);
-      dio.options.receiveTimeout = const Duration(seconds: 20);
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 30);
 
       String? downloadUrl;
       bool success = false;
 
-      // 1. استخراج ویدیو تیک‌تاک
-      if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
+      // جستجو در سرورهای کوبالت
+      for (String apiUrl in cobaltApiUrls) {
+        try {
+          final response = await dio.post(
+            apiUrl,
+            options: Options(
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://cobalt.tools/',
+                'Origin': 'https://cobalt.tools',
+              },
+            ),
+            data: {
+              'url': task.url,
+              'videoQuality': 'max',
+              'downloadMode': 'auto',
+            },
+            cancelToken: task.cancelToken,
+          );
+
+          if (response.statusCode == 200 && response.data != null) {
+            final data = response.data;
+            final status = data['status'];
+
+            if (status == 'tunnel' || status == 'redirect' || status == 'stream') {
+              downloadUrl = data['url'];
+              if (downloadUrl != null && downloadUrl.isNotEmpty) {
+                success = true;
+                break;
+              }
+            } else if (status == 'picker' && data['picker'] != null) {
+              final picker = data['picker'] as List;
+              if (picker.isNotEmpty) {
+                downloadUrl = picker[0]['url'];
+                if (downloadUrl != null && downloadUrl.isNotEmpty) {
+                  success = true;
+                  break;
+                }
+              }
+            } else if (data['url'] != null) {
+              downloadUrl = data['url'];
+              if (downloadUrl != null && downloadUrl.isNotEmpty) {
+                success = true;
+                break;
+              }
+            }
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+
+      // جایگزین اینستاگرام
+      if (!success && (task.url.contains('instagram.com') || task.url.contains('instagr.am'))) {
+        try {
+          final response = await dio.get(
+            'https://api.vkrdown.com/api/instagram',
+            queryParameters: {'url': task.url},
+            cancelToken: task.cancelToken,
+          );
+          if (response.statusCode == 200 && response.data['data'] != null) {
+            final mediaList = response.data['data']['media'];
+            if (mediaList is List && mediaList.isNotEmpty) {
+              downloadUrl = mediaList[0]['url'];
+              if (downloadUrl != null && downloadUrl.isNotEmpty) {
+                success = true;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // جایگزین تیک‌تاک
+      if (!success && (task.url.contains('tiktok.com') || task.url.contains('vt.tiktok.com'))) {
         try {
           final response = await dio.get(
             'https://www.tikwm.com/api/',
-            queryParameters: {'url': formattedUrl},
+            queryParameters: {'url': task.url},
+            cancelToken: task.cancelToken,
           );
           if (response.statusCode == 200 && response.data['code'] == 0) {
             downloadUrl = response.data['data']['play'];
@@ -500,103 +540,25 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (_) {}
       }
 
-      // 2. استخراج اختصاصی پست/ریلمز اینستاگرام
-      if (!success && (formattedUrl.contains('instagram.com') || formattedUrl.contains('instagr.am'))) {
-        try {
-          final response = await dio.get(
-            'https://api.vkrdown.com/api/instagram',
-            queryParameters: {'url': formattedUrl},
-          );
-          if (response.statusCode == 200 && response.data['data'] != null) {
-            final mediaList = response.data['data']['media'];
-            if (mediaList is List && mediaList.isNotEmpty) {
-              downloadUrl = mediaList[0]['url'];
-              success = true;
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 3. استخراج یوتیوب و سایر بسترهای ویدیو با Cobalt API v10
-      if (!success) {
-        List<String> activeCobaltApiUrls = [
-          ...cobaltApiUrls,
-          'https://cobalt-api.kwiatek.xyz/',
-          'https://api.cobalt.best/',
-          'https://co.wuk.sh/api/json',
-        ];
-
-        for (String apiUrl in activeCobaltApiUrls) {
-          try {
-            final response = await dio.post(
-              apiUrl,
-              options: Options(
-                headers: {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                  'Referer': 'https://cobalt.tools/',
-                  'Origin': 'https://cobalt.tools',
-                },
-              ),
-              data: {
-                'url': formattedUrl,
-                'videoQuality': 'max',
-                'downloadMode': 'auto',
-              },
-            );
-
-            if (response.statusCode == 200 && response.data != null) {
-              final data = response.data;
-              final status = data['status'];
-
-              if (status == 'tunnel' || status == 'redirect' || status == 'stream') {
-                downloadUrl = data['url'];
-                success = true;
-                break;
-              } else if (status == 'picker' && data['picker'] != null) {
-                final picker = data['picker'] as List;
-                if (picker.isNotEmpty) {
-                  downloadUrl = picker[0]['url'];
-                  success = true;
-                  break;
-                }
-              } else if (data['url'] != null) {
-                downloadUrl = data['url'];
-                success = true;
-                break;
-              }
-            }
-          } catch (_) {
-            continue;
-          }
-        }
-      }
-
       if (!success || downloadUrl == null) {
-        throw Exception('امکان استخراج لینک دانلود وجود ندارد. لطفاً از عمومی (Public) بودن پست یا ویدیو مطمئن شوید.');
+        throw Exception('امکان استخراج لینک دانلود وجود ندارد.');
       }
 
       var dir = await getTemporaryDirectory();
-      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-      
-      _currentDownloadUrl = downloadUrl;
-      _currentFilePath = filePath;
-      _cancelToken = CancelToken();
+      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${task.id}.mp4';
+      task.filePath = filePath;
 
       final response = await dio.get<ResponseBody>(
         downloadUrl,
         options: Options(
           responseType: ResponseType.stream,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
+          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
         ),
-        cancelToken: _cancelToken,
+        cancelToken: task.cancelToken,
       );
 
       final totalHeader = response.headers.value(Headers.contentLengthHeader);
-      _totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
+      task.totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
 
       final file = File(filePath);
       if (await file.exists()) {
@@ -606,42 +568,43 @@ class _HomeScreenState extends State<HomeScreen> {
 
       response.data!.stream.listen(
         (data) {
-          if (_isPaused) return;
+          if (task.isPaused) return;
           raf.writeFromSync(data);
-          _receivedBytes += data.length;
+          task.receivedBytes += data.length;
           if (mounted) {
             setState(() {
-              if (_totalBytes > 0) {
-                _downloadProgress = _receivedBytes / _totalBytes;
+              if (task.totalBytes > 0) {
+                task.progress = task.receivedBytes / task.totalBytes;
               }
             });
           }
         },
         onDone: () async {
           await raf.close();
-          if (!_isPaused) {
+          if (!task.isPaused) {
             await Gal.putVideo(filePath);
             setState(() {
+              _activeDownloads.remove(task);
               downloadedHistory.add(
                 DownloadedVideoModel(
                   filePath: filePath,
                   date: DateTime.now().toString().substring(0, 19),
                 ),
               );
-              _isDownloading = false;
             });
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+                const SnackBar(content: Text('یک ویدیو همزمان با موفقیت دانلود و ذخیره شد!')),
               );
-              _urlController.clear();
             }
           }
         },
         onError: (e) async {
           await raf.close();
           if (!CancelToken.isCancel(e as DioException)) {
-            setState(() => _isDownloading = false);
+            setState(() {
+              _activeDownloads.remove(task);
+            });
           }
         },
         cancelOnError: true,
@@ -650,17 +613,15 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!CancelToken.isCancel(e as DioException)) {
         if (mounted) {
-          String errorMessage = e.toString();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(errorMessage, textDirection: TextDirection.rtl),
-              duration: const Duration(seconds: 7),
+              content: Text('خطا در دانلود: $e', textDirection: TextDirection.rtl),
               backgroundColor: Colors.red.shade800,
             ),
           );
         }
         setState(() {
-          _isDownloading = false;
+          _activeDownloads.remove(task);
         });
       }
     }
