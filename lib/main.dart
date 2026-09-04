@@ -108,8 +108,11 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _urlController,
+            textDirection: TextDirection.ltr, // جهت متن چپ‌چین برای نمایش درست لینک
+            textAlign: TextAlign.left,
             decoration: InputDecoration(
               hintText: 'https://...',
+              hintTextDirection: TextDirection.ltr,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -163,13 +166,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // نمایش تبلیغات و سپس دانلود هوشمند با اصلاح خودکار لینک
-  void _playAdsAndDownload(BuildContext context, String rawUrl) async {
-    // اصلاح خودکار لینک در صورت فراموش شدن https://
-    String formattedUrl = rawUrl;
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = 'https://$formattedUrl';
+  // استخراج هوشمند لینک از میان متن‌های کپی شده و شروع دانلود
+  String _extractValidUrl(String rawText) {
+    final regExp = RegExp(r'(https?:\/\/[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*))');
+    final match = regExp.firstMatch(rawText);
+    if (match != null) {
+      var url = match.group(0)!;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://$url';
+      }
+      return url;
     }
+    return rawText.trim();
+  }
+
+  void _playAdsAndDownload(BuildContext context, String rawUrl) async {
+    // استخراج دقیق لینک واقعی و پاکسازی متن‌های اضافی
+    String formattedUrl = _extractValidUrl(rawUrl);
 
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
