@@ -17,11 +17,11 @@ class DownloadedVideoModel {
 
 List<DownloadedVideoModel> downloadedHistory = [];
 
-// لیست سرورهای معتبر و جدید Cobalt برای یوتیوب و اینستاگرام
+// لیست سرورهای معتبر و فعال Cobalt برای یوتیوب و اینستاگرام
 List<String> cobaltApiUrls = [
-  'https://api.cobalt.tools/api/json',
+  'https://cobalt-api.kwiatek.xyz/',
+  'https://api.cobalt.best/',
   'https://co.wuk.sh/api/json',
-  'https://api.cobalt.best/api/json',
 ];
 
 class AdModel {
@@ -478,13 +478,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 25);
-      dio.options.receiveTimeout = const Duration(seconds: 25);
+      dio.options.connectTimeout = const Duration(seconds: 20);
+      dio.options.receiveTimeout = const Duration(seconds: 20);
 
       String? downloadUrl;
       bool success = false;
 
-      // 1. بررسی تیک‌تاک
+      // 1. استخراج ویدیو تیک‌تاک
       if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
         try {
           final response = await dio.get(
@@ -500,9 +500,33 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (_) {}
       }
 
-      // 2. بررسی یوتیوب، اینستاگرام و سایر پلتفرم‌ها با استانداردهای جدید Cobalt API
+      // 2. استخراج اختصاصی پست/ریلمز اینستاگرام
+      if (!success && (formattedUrl.contains('instagram.com') || formattedUrl.contains('instagr.am'))) {
+        try {
+          final response = await dio.get(
+            'https://api.vkrdown.com/api/instagram',
+            queryParameters: {'url': formattedUrl},
+          );
+          if (response.statusCode == 200 && response.data['data'] != null) {
+            final mediaList = response.data['data']['media'];
+            if (mediaList is List && mediaList.isNotEmpty) {
+              downloadUrl = mediaList[0]['url'];
+              success = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. استخراج یوتیوب و سایر بسترهای ویدیو با Cobalt API v10
       if (!success) {
-        for (String apiUrl in cobaltApiUrls) {
+        List<String> activeCobaltApiUrls = [
+          ...cobaltApiUrls,
+          'https://cobalt-api.kwiatek.xyz/',
+          'https://api.cobalt.best/',
+          'https://co.wuk.sh/api/json',
+        ];
+
+        for (String apiUrl in activeCobaltApiUrls) {
           try {
             final response = await dio.post(
               apiUrl,
@@ -510,12 +534,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 headers: {
                   'Accept': 'application/json',
                   'Content-Type': 'application/json',
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Referer': 'https://cobalt.tools/',
+                  'Origin': 'https://cobalt.tools',
                 },
               ),
               data: {
                 'url': formattedUrl,
-                'v': '2',
+                'videoQuality': 'max',
+                'downloadMode': 'auto',
               },
             );
 
@@ -523,13 +550,13 @@ class _HomeScreenState extends State<HomeScreen> {
               final data = response.data;
               final status = data['status'];
 
-              if (status == 'stream' || status == 'redirect' || status == 'tunnel') {
+              if (status == 'tunnel' || status == 'redirect' || status == 'stream') {
                 downloadUrl = data['url'];
                 success = true;
                 break;
-              } else if (status == 'picker') {
-                final picker = data['picker'] as List?;
-                if (picker != null && picker.isNotEmpty) {
+              } else if (status == 'picker' && data['picker'] != null) {
+                final picker = data['picker'] as List;
+                if (picker.isNotEmpty) {
                   downloadUrl = picker[0]['url'];
                   success = true;
                   break;
@@ -547,7 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || downloadUrl == null) {
-        throw Exception('امکان استخراج لینک دانلود ویدیو از این لینک وجود ندارد. لطفاً لینک دیگری آزمایش کنید.');
+        throw Exception('امکان استخراج لینک دانلود وجود ندارد. لطفاً از عمومی (Public) بودن پست یا ویدیو مطمئن شوید.');
       }
 
       var dir = await getTemporaryDirectory();
@@ -716,7 +743,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 }
 
-// صفحه نمایش تبلیغ اصلاح شده برای باز کردن مطمئن لینک واتساپ
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -787,7 +813,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                       onTap: () async {
                         final uri = Uri.parse(widget.ad.link);
                         try {
-                          // اجرای مستقیم بدون چک کردن canLaunchUrl برای جلوگیری از بسته شدن دسترسی در اندروید
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
                         } catch (e) {
                           try {
