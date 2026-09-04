@@ -6,13 +6,10 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
-// لیست قابل تغییر سرورهای API (قابل مدیریت از پنل ادمین)
+// لیست سرورهای پشتیبان برای سایر پلتفرم‌ها (اینستاگرام، یوتیوب و...)
 List<String> cobaltApiUrls = [
-  'https://co.wuk.sh/api/json',
-  'https://coapi.kelig.me/api/json',
   'https://api.cobalt.best/api/json',
-  'https://cobalt.kwiatekmichal.pl/api/json',
-  'https://dl.khaledkishk.com/api/json',
+  'https://co.wuk.sh/api/json',
 ];
 
 // مدل داده‌ای تبلیغات
@@ -237,49 +234,61 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.connectTimeout = const Duration(seconds: 15);
       dio.options.receiveTimeout = const Duration(seconds: 15);
 
-      Response? response;
-      bool success = false;
-      String lastError = '';
-
-      // تلاش برای ارتباط با سرورهای مختلف به صورت چرخشی (Failover)
-      for (String apiUrl in cobaltApiUrls) {
-        try {
-          response = await dio.post(
-            apiUrl,
-            options: Options(
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-              },
-            ),
-            data: {
-              'url': formattedUrl,
-            },
-          );
-          if (response.statusCode == 200) {
-            success = true;
-            break;
-          }
-        } catch (err) {
-          lastError = err.toString();
-          continue; 
-        }
-      }
-
-      if (!success || response == null) {
-        throw Exception('امکان اتصال به هیچ‌کدام از سرورها وجود ندارد. لطفاً از طریق پنل ادمین یک سرور یا پروکسی جدید اضافه کنید.');
-      }
-
-      final data = response.data;
       String? downloadUrl;
+      bool success = false;
 
-      if (data['status'] == 'stream' || data['status'] == 'redirect') {
-        downloadUrl = data['url'];
-      } else if (data['status'] == 'picker') {
-        final picker = data['picker'] as List;
-        if (picker.isNotEmpty) {
-          downloadUrl = picker[0]['url'];
+      // اگر لینک مربوط به تیک‌تاک باشد، از API اختصاصی و بدون تحریم TikWM استفاده می‌شود
+      if (formattedUrl.contains('tiktok.com') || formattedUrl.contains('vt.tiktok.com')) {
+        try {
+          final response = await dio.get(
+            'https://www.tikwm.com/api/',
+            queryParameters: {'url': formattedUrl},
+          );
+          if (response.statusCode == 200 && response.data['code'] == 0) {
+            downloadUrl = response.data['data']['play'];
+            success = true;
+          }
+        } catch (_) {}
+      }
+
+      // اگر لینک تیک‌تاک نبود یا به هر دلیلی ناموفق بود، سرورهای دیگر تست می‌شوند
+      if (!success) {
+        String lastError = '';
+        for (String apiUrl in cobaltApiUrls) {
+          try {
+            final response = await dio.post(
+              apiUrl,
+              options: Options(
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                },
+              ),
+              data: {'url': formattedUrl},
+            );
+            if (response.statusCode == 200) {
+              final data = response.data;
+              if (data['status'] == 'stream' || data['status'] == 'redirect') {
+                downloadUrl = data['url'];
+                success = true;
+                break;
+              } else if (data['status'] == 'picker') {
+                final picker = data['picker'] as List;
+                if (picker.isNotEmpty) {
+                  downloadUrl = picker[0]['url'];
+                  success = true;
+                  break;
+                }
+              }
+            }
+          } catch (err) {
+            lastError = err.toString();
+            continue;
+          }
+        }
+        if (!success) {
+          throw Exception('امکان دریافت لینک ویدیو وجود ندارد. جزئیات: $lastError');
         }
       }
 
@@ -303,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         String errorMessage = e.toString();
         if (errorMessage.contains('Failed host lookup')) {
-          errorMessage = 'خطا در اتصال: سرورها مسدود یا غیرقابل دسترس هستند. لطفاً از پنل ادمین سرور جدید اضافه کنید یا VPN خود را بررسی نمایید.';
+          errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی شبکه را بررسی کنید.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -441,11 +450,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggedIn = false;
 
-  // کنترلرهای افزودن تبلیغ
   final TextEditingController _adTitleController = TextEditingController();
   final TextEditingController _adDurationController = TextEditingController();
-
-  // کنترلر افزودن سرور جدید
   final TextEditingController _serverController = TextEditingController();
 
   @override
@@ -485,7 +491,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               Expanded(
                 child: TabBarView(
                   children: [
-                    // تب اول: مدیریت تبلیغات
                     SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -578,8 +583,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         ],
                       ),
                     ),
-
-                    // تب دوم: مدیریت سرورهای API
                     SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -592,13 +595,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  const Text('افزودن سرور API جدید (کوبالت/پروکسی)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const Text('افزودن سرور API جدید', style: TextStyle(fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _serverController,
                                     textDirection: TextDirection.ltr,
                                     decoration: const InputDecoration(
-                                      labelText: 'آدرس کامل API (مثلاً https://.../api/json)',
+                                      labelText: 'آدرس کامل API',
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -610,7 +613,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           _serverController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('سرور جدید به لیست اضافه شد!')),
+                                          const SnackBar(content: Text('سرور جدید اضافه شد!')),
                                         );
                                       }
                                     },
@@ -622,7 +625,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text('لیست سرورهای فعال فعلی:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('لیست سرورهای فعال:', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           ListView.builder(
                             shrinkWrap: true,
