@@ -163,8 +163,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // نمایش تبلیغات و سپس دانلود سراسری ویدیو (تیک‌تاک، اینستاگرام، یوتیوب، فیسبوک)
-  void _playAdsAndDownload(BuildContext context, String url) async {
+  // نمایش تبلیغات و سپس دانلود هوشمند با اصلاح خودکار لینک
+  void _playAdsAndDownload(BuildContext context, String rawUrl) async {
+    // اصلاح خودکار لینک در صورت فراموش شدن https://
+    String formattedUrl = rawUrl;
+    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+      formattedUrl = 'https://$formattedUrl';
+    }
+
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
     if (activeAds.isNotEmpty) {
@@ -185,17 +191,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      // استفاده از سرویس استاندارد برای استخراج لینک مستقیم از تمامی پلتفرم‌ها
       final response = await dio.post(
         'https://api.cobalt.tools/api/json',
         options: Options(
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           },
         ),
         data: {
-          'url': url,
+          'url': formattedUrl,
         },
       );
 
@@ -226,10 +232,10 @@ class _HomeScreenState extends State<HomeScreen> {
             _urlController.clear();
           }
         } else {
-          throw Exception('لینک دانلود از این سرویس دریافت نشد.');
+          throw Exception('لینک دانلود دریافت نشد.');
         }
       } else {
-        throw Exception('خطا در برقراری ارتباط با سرور.');
+        throw Exception('خطا در پاسخ سرور.');
       }
     } catch (e) {
       if (mounted) {
