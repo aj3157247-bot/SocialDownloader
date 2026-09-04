@@ -24,7 +24,7 @@ class AdModel {
 // لیست سراسری تبلیغات (مدیریت شده توسط ادمین)
 List<AdModel> globalAds = [
   AdModel(id: '1', title: 'تبلیغ اول: معرفی کانال تلگرام ما', duration: 5, isActive: true),
-  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه خرید هاست', duration: 5, isActive: true),
+  AdModel(id: '2', title: 'تبلیغ دوم: تخفیف ویژه سرویس‌ها', duration: 5, isActive: true),
 ];
 
 void main() {
@@ -167,16 +167,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _extractValidUrl(String rawText) {
-    final regExp = RegExp(r'(https?:\/\/[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*))');
-    final match = regExp.firstMatch(rawText);
+    String text = rawText.trim();
+    // پاکسازی متن‌های اضافی احتمالی اطراف لینک
+    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+');
+    final match = regExp.firstMatch(text);
+    
     if (match != null) {
-      var url = match.group(0)!;
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://$url';
-      }
-      return url;
+      text = match.group(0)!;
     }
-    return rawText.trim();
+
+    if (text.startsWith('youtu.be/')) {
+      return 'https://$text';
+    }
+    if (!text.startsWith('http://') && !text.startsWith('https://')) {
+      return 'https://$text';
+    }
+    return text;
   }
 
   void _playAdsAndDownload(BuildContext context, String rawUrl) async {
@@ -184,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
 
+    // نمایش تبلیغات فعال پیش از شروع دانلود
     if (activeAds.isNotEmpty) {
       for (var ad in activeAds) {
         await Navigator.push(
@@ -202,8 +209,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 15);
-      dio.options.receiveTimeout = const Duration(seconds: 15);
+      dio.options.connectTimeout = const Duration(seconds: 20);
+      dio.options.receiveTimeout = const Duration(seconds: 20);
 
       final response = await dio.post(
         'https://api.cobalt.tools/api/json',
@@ -246,17 +253,22 @@ class _HomeScreenState extends State<HomeScreen> {
             _urlController.clear();
           }
         } else {
-          throw Exception('فرمت پاسخ سرور ناشناخته است: $data');
+          throw Exception('فرمت پاسخ سرور ناشناخته است یا لینک دانلود یافت نشد.');
         }
       } else {
         throw Exception('کد خطای سرور: ${response.statusCode}');
       }
     } catch (e) {
       if (mounted) {
+        String errorMessage = e.toString();
+        if (errorMessage.contains('Failed host lookup')) {
+          errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی اینترنت را بررسی کنید.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('خطای دقیق: $e'),
+            content: Text(errorMessage),
             duration: const Duration(seconds: 6),
+            backgroundColor: Colors.red.shade800,
           ),
         );
       }
