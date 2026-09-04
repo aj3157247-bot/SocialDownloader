@@ -5,6 +5,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 // مدل ویدیوهای دانلود شده
 class DownloadedVideoModel {
@@ -23,7 +25,7 @@ List<String> cobaltApiUrls = [
   'https://co.wuk.sh/api/json',
 ];
 
-// مدل داده‌ای تبلیغات (با پشتیبانی از لینک و متن کامل)
+// مدل داده‌ای تبلیغات
 class AdModel {
   String id;
   String title;
@@ -43,7 +45,7 @@ class AdModel {
 List<AdModel> globalAds = [
   AdModel(
     id: '1', 
-    title: 'تبلیغ اول: معرفی کانال تلگرام ما\nارتباط با ما: 09123456789\nایمیل: support@site.com', 
+    title: 'تبلیغ اول: معرفی کانال تلگرام ما\nارتباط با ما: 09123456789', 
     link: 'https://t.me/example',
     duration: 5, 
     isActive: true,
@@ -89,8 +91,16 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
+  
   bool _isDownloading = false;
+  bool _isPaused = false;
   double _downloadProgress = 0.0;
+  
+  CancelToken? _cancelToken;
+  String? _currentDownloadUrl;
+  String? _currentFilePath;
+  int _receivedBytes = 0;
+  int _totalBytes = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -159,15 +169,43 @@ class _HomeScreenState extends State<HomeScreen> {
               ? Column(
                   children: [
                     LinearProgressIndicator(
-                      value: _downloadProgress,
+                      value: _downloadProgress > 0 ? _downloadProgress : null,
                       backgroundColor: Colors.grey[800],
                       valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
                       minHeight: 8,
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _isPaused
+                              ? 'متوقف شده (${(_downloadProgress * 100).toStringAsFixed(0)}%)'
+                              : 'در حال دانلود: ${(_downloadProgress * 100).toStringAsFixed(0)}%',
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+                        Row(
+                          children: [
+                            if (_isPaused)
+                              IconButton(
+                                icon: const Icon(Icons.play_arrow, color: Colors.greenAccent),
+                                onPressed: _resumeDownload,
+                                tooltip: 'ادامه',
+                              )
+                            else
+                              IconButton(
+                                icon: const Icon(Icons.pause, color: Colors.orangeAccent),
+                                onPressed: _pauseDownload,
+                                tooltip: 'توقف',
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.redAccent),
+                              onPressed: _cancelDownload,
+                              tooltip: 'کنسل',
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 )
@@ -192,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
           const SizedBox(height: 20),
           const Text(
-            'ویدیوهای دانلود شده اخیر در این برنامه:',
+            'ویدیوهای دانلود شده اخیر در این برنامه (برای پخش لمس کنید):',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -220,6 +258,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text(item.date, style: const TextStyle(fontSize: 12)),
+                          onTap: () {
+                            // باز کردن و پخش ویدیو در داخل برنامه
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VideoPlayerScreen(filePath: item.filePath),
+                              ),
+                            );
+                          },
                           trailing: IconButton(
                             icon: const Icon(Icons.share, color: Colors.greenAccent),
                             onPressed: () async {
@@ -242,6 +289,95 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _pauseDownload() {
+    _cancelToken?.cancel('paused');
+    setState(() {
+      _isPaused = true;
+    });
+  }
+
+  void _resumeDownload() async {
+    setState(() {
+      _isPaused = false;
+    });
+    try {
+      final dio = Dio();
+      _cancelToken = CancelToken();
+      
+      final file = File(_currentFilePath!);
+      final raf = await file.open(mode: FileMode.append);
+
+      final response = await dio.get<ResponseBody>(
+        _currentDownloadUrl!,
+        options: Options(
+          headers: {'range': 'bytes=$_receivedBytes-'},
+          responseType: ResponseType.stream,
+        ),
+        cancelToken: _cancelToken,
+      );
+
+      response.data!.stream.listen(
+        (data) {
+          if (_isPaused) return;
+          raf.writeFromSync(data);
+          _receivedBytes += data.length;
+          if (mounted) {
+            setState(() {
+              if (_totalBytes > 0) {
+                _downloadProgress = _receivedBytes / _totalBytes;
+              }
+            });
+          }
+        },
+        onDone: () async {
+          await raf.close();
+          if (!_isPaused) {
+            await Gal.putVideo(_currentFilePath!);
+            setState(() {
+              downloadedHistory.add(
+                DownloadedVideoModel(
+                  filePath: _currentFilePath!,
+                  date: DateTime.now().toString().substring(0, 19),
+                ),
+              );
+              _isDownloading = false;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+              );
+              _urlController.clear();
+            }
+          }
+        },
+        onError: (e) async {
+          await raf.close();
+          if (!CancelToken.isCancel(e)) {
+            setState(() => _isDownloading = false);
+          }
+        },
+        cancelOnError: true,
+      );
+    } catch (e) {
+      if (!CancelToken.isCancel(e)) {
+        setState(() => _isDownloading = false);
+      }
+    }
+  }
+
+  void _cancelDownload() {
+    _cancelToken?.cancel('cancelled');
+    setState(() {
+      _isDownloading = false;
+      _isPaused = false;
+      _downloadProgress = 0.0;
+      _receivedBytes = 0;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('دانلود لغو شد')),
     );
   }
 
@@ -291,7 +427,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _isDownloading = true;
+      _isPaused = false;
       _downloadProgress = 0.0;
+      _receivedBytes = 0;
     });
 
     try {
@@ -359,54 +497,86 @@ class _HomeScreenState extends State<HomeScreen> {
         var dir = await getTemporaryDirectory();
         var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
         
-        await dio.download(
+        _currentDownloadUrl = downloadUrl;
+        _currentFilePath = filePath;
+        _cancelToken = CancelToken();
+
+        final response = await dio.get<ResponseBody>(
           downloadUrl,
-          filePath,
-          onReceiveProgress: (received, total) {
-            if (total != -1) {
+          options: Options(responseType: ResponseType.stream),
+          cancelToken: _cancelToken,
+        );
+
+        final totalHeader = response.headers.value(Headers.contentLengthHeader);
+        _totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
+
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+        final raf = await file.open(mode: FileMode.write);
+
+        response.data!.stream.listen(
+          (data) {
+            if (_isPaused) return;
+            raf.writeFromSync(data);
+            _receivedBytes += data.length;
+            if (mounted) {
               setState(() {
-                _downloadProgress = received / total;
+                if (_totalBytes > 0) {
+                  _downloadProgress = _receivedBytes / _totalBytes;
+                }
               });
             }
           },
+          onDone: () async {
+            await raf.close();
+            if (!_isPaused) {
+              await Gal.putVideo(filePath);
+              setState(() {
+                downloadedHistory.add(
+                  DownloadedVideoModel(
+                    filePath: filePath,
+                    date: DateTime.now().toString().substring(0, 19),
+                  ),
+                );
+                _isDownloading = false;
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+                );
+                _urlController.clear();
+              }
+            }
+          },
+          onError: (e) async {
+            await raf.close();
+            if (!CancelToken.isCancel(e)) {
+              setState(() => _isDownloading = false);
+            }
+          },
+          cancelOnError: true,
         );
 
-        await Gal.putVideo(filePath);
-
-        setState(() {
-          downloadedHistory.add(
-            DownloadedVideoModel(
-              filePath: filePath,
-              date: DateTime.now().toString().substring(0, 19),
-            ),
-          );
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-          );
-          _urlController.clear();
-        }
       } else {
         throw Exception('لینک دانلود از پاسخ سرور استخراج نشد.');
       }
     } catch (e) {
-      if (mounted) {
-        String errorMessage = e.toString();
-        if (errorMessage.contains('Failed host lookup')) {
-          errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی شبکه را بررسی کنید.';
+      if (!CancelToken.isCancel(e)) {
+        if (mounted) {
+          String errorMessage = e.toString();
+          if (errorMessage.contains('Failed host lookup')) {
+            errorMessage = 'خطا در اتصال به اینترنت. لطفاً دسترسی شبکه را بررسی کنید.';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage, textDirection: TextDirection.rtl),
+              duration: const Duration(seconds: 7),
+              backgroundColor: Colors.red.shade800,
+            ),
+          );
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage, textDirection: TextDirection.rtl),
-            duration: const Duration(seconds: 7),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
         setState(() {
           _isDownloading = false;
         });
@@ -415,6 +585,84 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// صفحه پخش ویدیوی داخلی برنامه
+class VideoPlayerScreen extends StatefulWidget {
+  final String filePath;
+  const VideoPlayerScreen({super.key, required this.filePath});
+
+  @override
+  State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(File(widget.filePath))
+      ..initialize().then((_) {
+        setState(() {});
+        _controller.play();
+        _isPlaying = true;
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('پخش ویدیو')),
+      body: Center(
+        child: _controller.value.isInitialized
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AspectRatio(
+                    aspectRatio: _controller.value.aspectRatio,
+                    child: VideoPlayer(_controller),
+                  ),
+                  const SizedBox(height: 16),
+                  VideoProgressIndicator(
+                    _controller,
+                    allowScrubbing: true,
+                    colors: const VideoProgressColors(playedColor: Colors.blueAccent),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 40),
+                        onPressed: () {
+                          setState(() {
+                            if (_isPlaying) {
+                              _controller.pause();
+                              _isPlaying = false;
+                            } else {
+                              _controller.play();
+                              _isPlaying = true;
+                            }
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : const CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+
+// صفحه نمایش تبلیغ با قابلیت کلیک روی لینک
 class AdPlayerScreen extends StatefulWidget {
   final AdModel ad;
   const AdPlayerScreen({super.key, required this.ad});
@@ -474,7 +722,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                 children: [
                   const Icon(Icons.campaign_rounded, size: 90, color: Colors.amberAccent),
                   const SizedBox(height: 24),
-                  // نمایش متن چندخطی تبلیغ (شامل لینک، ایمیل، شماره و توضیحات)
                   SelectableText(
                     widget.ad.title,
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, height: 1.5),
@@ -482,11 +729,23 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                   ),
                   if (widget.ad.link.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    SelectableText(
-                      widget.ad.link,
-                      style: const TextStyle(fontSize: 14, color: Colors.blueAccent),
-                      textAlign: TextAlign.center,
-                      textDirection: TextDirection.ltr,
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.parse(widget.ad.link);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      child: Text(
+                        widget.ad.link,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Colors.blueAccent,
+                          decoration: TextDecoration.underline,
+                        ),
+                        textAlign: TextAlign.center,
+                        textDirection: TextDirection.ltr,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -531,6 +790,7 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
   }
 }
 
+// پنل مدیریت ادمین
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -543,11 +803,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggedIn = false;
 
-  // کنترلرهای فرم افزودن تبلیغ جدید
   final TextEditingController _adTitleController = TextEditingController();
   final TextEditingController _adLinkController = TextEditingController();
   final TextEditingController _adDurationController = TextEditingController();
-  
   final TextEditingController _serverController = TextEditingController();
 
   @override
@@ -601,22 +859,20 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                 children: [
                                   const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 8),
-                                  // فیلد چندخطی برای متن، شماره، ایمیل یا لینک در متن
                                   TextField(
                                     controller: _adTitleController,
                                     maxLines: 4,
                                     decoration: const InputDecoration(
-                                      labelText: 'متن تبلیغ (شامل توضیحات، شماره تماس، ایمیل یا لینک)',
+                                      labelText: 'متن تبلیغ (توضیحات، شماره تماس و...)',
                                       alignLabelWithHint: true,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  // فیلد تخصصی برای لینک وب‌سایت یا کانال مقصد
                                   TextField(
                                     controller: _adLinkController,
                                     textDirection: TextDirection.ltr,
                                     decoration: const InputDecoration(
-                                      labelText: 'لینک مقصد (URL - اختیاری)',
+                                      labelText: 'لینک قابل کلیک (URL - مثلاً https://...)',
                                     ),
                                   ),
                                   const SizedBox(height: 8),
