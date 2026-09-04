@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _urlController,
-            textDirection: TextDirection.ltr, // جهت متن چپ‌چین برای نمایش درست لینک
+            textDirection: TextDirection.ltr,
             textAlign: TextAlign.left,
             decoration: InputDecoration(
               hintText: 'https://...',
@@ -166,7 +166,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // استخراج هوشمند لینک از میان متن‌های کپی شده و شروع دانلود
   String _extractValidUrl(String rawText) {
     final regExp = RegExp(r'(https?:\/\/[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*))');
     final match = regExp.firstMatch(rawText);
@@ -181,7 +180,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _playAdsAndDownload(BuildContext context, String rawUrl) async {
-    // استخراج دقیق لینک واقعی و پاکسازی متن‌های اضافی
     String formattedUrl = _extractValidUrl(rawUrl);
 
     final activeAds = globalAds.where((ad) => ad.isActive).toList();
@@ -204,6 +202,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final dio = Dio();
+      // تنظیم تایم‌اوت برای جلوگیری از معطلی طولانی
+      dio.options.connectTimeout = const Duration(seconds: 15);
+      dio.options.receiveTimeout = const Duration(seconds: 15);
+
       final response = await dio.post(
         'https://api.cobalt.tools/api/json',
         options: Options(
@@ -245,15 +247,19 @@ class _HomeScreenState extends State<HomeScreen> {
             _urlController.clear();
           }
         } else {
-          throw Exception('لینک دانلود دریافت نشد.');
+          throw Exception('فرمت پاسخ سرور ناشناخته است: $data');
         }
       } else {
-        throw Exception('خطا در پاسخ سرور.');
+        throw Exception('کد خطای سرور: ${response.statusCode}');
       }
     } catch (e) {
       if (mounted) {
+        // نمایش خطای دقیق برای عیب‌یابی
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطا در دانلود: لینک نامعتبر است یا اینترنت قطع می‌باشد')),
+          SnackBar(
+            content: Text('خطای دقیق: $e'),
+            duration: const Duration(seconds: 6),
+          ),
         );
       }
     } finally {
@@ -502,61 +508,4 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'ورود اختصاصی ادمین',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _emailController,
-            decoration: InputDecoration(
-              labelText: 'ایمیل ادمین',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              prefixIcon: const Icon(Icons.email),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            decoration: InputDecoration(
-              labelText: 'رمز عبور',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              prefixIcon: const Icon(Icons.lock),
-            ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () {
-              if (_emailController.text.trim() == 'abdullahjafari712@gmail.com' &&
-                  _passwordController.text == '05050505') {
-                setState(() {
-                  _isLoggedIn = true;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('خوش آمدید عبدالله عزیز! پنل مدیریت باز شد.')),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ایمیل یا رمز عبور اشتباه است!')),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('ورود به پنل مدیریت'),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    return, // (Wait, standard syntax check: return Padding...)
