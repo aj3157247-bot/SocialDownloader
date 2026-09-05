@@ -40,14 +40,15 @@ class DownloadingTaskModel {
   });
 }
 
-// سرورهای Cobalt که در نسخه جدید API از endpoint ریشه (/) استفاده می‌کنند.
-// چند سرور پشتیبان قرار داده شده تا خرابی یک سرور باعث از کار افتادن دانلود نشود.
+// سرورهای Cobalt فعلی؛ endpoint اصلی نسخه‌های جدید روی / است.
+// api.cobalt.tools هنوز از /api/json استفاده می‌کند.
 final List<String> cobaltApiUrls = [
-  'https://cobaltapi.kittycat.boo',
-  'https://api-cobalt.eversiege.network',
-  'https://grapefruit.clxxped.lol',
-  'https://nuko-c.meowing.de',
-  'https://bergung-api.hoffnungfuerdiezukunft.net',
+  'https://api.cobalt.tools/api/json',
+  'https://nuko-c.meowing.de/',
+  'https://api-cobalt.eversiege.network/',
+  'https://cobaltapi.kittycat.boo/',
+  'https://cobalt-alpha.wolfy.love/',
+  'https://bergung-api.hoffnungfuerdiezukunft.net/',
 ];
 
 class AdModel {
@@ -503,165 +504,217 @@ class _HomeScreenState extends State<HomeScreen> {
     Dio? dio;
     try {
       dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 25),
+        connectTimeout: const Duration(seconds: 12),
         receiveTimeout: const Duration(seconds: 90),
-        sendTimeout: const Duration(seconds: 25),
+        sendTimeout: const Duration(seconds: 15),
+        followRedirects: true,
+        maxRedirects: 8,
+        validateStatus: (status) => status != null && status >= 200 && status < 500,
       ));
 
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
         client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-        client.connectionTimeout = const Duration(seconds: 25);
+        client.connectionTimeout = const Duration(seconds: 12);
         return client;
       };
 
+      final sourceUrl = task.url;
+      final lowerUrl = sourceUrl.toLowerCase();
+      final isTikTok = lowerUrl.contains('tiktok.com') || lowerUrl.contains('vm.tiktok.com');
+      final isInstagram = lowerUrl.contains('instagram.com');
+      final isYouTube = lowerUrl.contains('youtube.com') || lowerUrl.contains('youtu.be');
+
       String? downloadUrl;
-      bool success = false;
       String lastError = '';
 
-      // Cobalt جدید: endpoint اصلی POST / است؛ /api/json مربوط به API قدیمی است
-      // و از نوامبر 2024 دیگر نباید روی آن حساب کرد.
-      for (final apiBase in cobaltApiUrls) {
+      Future<bool> tryTikwm() async {
         try {
-          final endpoint = apiBase.endsWith('/') ? apiBase : '$apiBase/';
-          final response = await dio.post(
-            endpoint,
-            options: Options(
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'SocialDownloader/1.0 (Android)',
-              },
-              validateStatus: (status) => status != null && status >= 200 && status < 500,
-            ),
-            data: {
-              'url': task.url,
-              'videoQuality': '1080',
-              'vCodec': 'h264',
-              'audioFormat': 'mp3',
-              'downloadMode': 'auto',
-              'isAudioOnly': false,
-            },
-            cancelToken: task.cancelToken,
-          );
-
-          if (response.statusCode != 200 || response.data == null) {
-            lastError = 'HTTP ${response.statusCode}';
-            continue;
-          }
-
-          final data = response.data;
-          if (data is! Map) {
-            lastError = 'Invalid API response';
-            continue;
-          }
-
-          final status = data['status']?.toString() ?? '';
-          if (status == 'error' || status == 'rate-limit') {
-            lastError = data['text']?.toString() ?? status;
-            continue;
-          }
-
-          // Cobalt ممکن است مستقیم redirect/stream/tunnel برگرداند.
-          final candidates = <dynamic>[
-            data['url'],
-            data['downloadUrl'],
-            data['directUrl'],
-            data['stream'],
-            data['link'],
-          ];
-
-          for (final candidate in candidates) {
-            if (candidate is String && candidate.trim().isNotEmpty) {
-              downloadUrl = candidate.trim();
-              break;
-            }
-          }
-
-          // اگر picker برگشت، اولین ویدیو را انتخاب می‌کنیم.
-          if ((downloadUrl == null || downloadUrl!.isEmpty) && data['picker'] is List) {
-            final picker = data['picker'] as List;
-            for (final item in picker) {
-              if (item is Map && item['url'] is String && (item['type'] == null || item['type'] == 'video')) {
-                final value = item['url'].toString().trim();
-                if (value.isNotEmpty) {
-                  downloadUrl = value;
-                  break;
-                }
-              }
-            }
-          }
-
-          if (downloadUrl != null && downloadUrl!.isNotEmpty) {
-            success = true;
-            break;
-          }
-
-          lastError = data['text']?.toString() ?? 'No media URL returned';
-        } catch (e) {
-          if (e is DioException && CancelToken.isCancel(e)) rethrow;
-          lastError = e.toString();
-          continue;
-        }
-      }
-
-      // اگر Cobalt به هر دلیلی پاسخ نداد، TikTok را با TikWM نگه می‌داریم
-      // تا قابلیت فعلی برنامه خراب نشود.
-      if (!success && _isTikTokUrl(task.url)) {
-        try {
-          final response = await dio.get(
+          final response = await dio!.get(
             'https://www.tikwm.com/api/',
-            queryParameters: {'url': task.url},
+            queryParameters: {'url': sourceUrl},
+            options: Options(headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+            }),
             cancelToken: task.cancelToken,
           );
           if (response.statusCode == 200 && response.data is Map) {
-            final data = response.data as Map;
-            final inner = data['data'];
-            if (inner is Map) {
+            final body = Map<String, dynamic>.from(response.data as Map);
+            final data = body['data'];
+            if (data is Map) {
               for (final key in ['hdplay', 'play', 'wmplay']) {
-                final value = inner[key];
-                if (value is String && value.isNotEmpty) {
-                  downloadUrl = value;
-                  success = true;
-                  break;
+                final value = data[key];
+                if (value is String && value.trim().isNotEmpty) {
+                  downloadUrl = value.trim();
+                  return true;
                 }
               }
             }
+            lastError = body['msg']?.toString() ?? 'TikWM returned no video URL';
+          } else {
+            lastError = 'TikWM HTTP ${response.statusCode}';
           }
         } catch (e) {
           if (e is DioException && CancelToken.isCancel(e)) rethrow;
-          lastError = e.toString();
+          lastError = 'TikWM: $e';
+        }
+        return false;
+      }
+
+      Future<bool> tryCobalt(String base) async {
+        final endpoints = <String>[];
+        final normalized = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+        if (normalized == 'https://api.cobalt.tools') {
+          endpoints.add('$normalized/api/json');
+        } else {
+          endpoints.add('$normalized/');
+          endpoints.add('$normalized/api/json');
+        }
+
+        for (final endpoint in endpoints) {
+          try {
+            final response = await dio!.post(
+              endpoint,
+              options: Options(headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'SocialDownloader/1.0 (Android)',
+              }),
+              data: {
+                'url': sourceUrl,
+                'videoQuality': isYouTube ? '720' : '1080',
+                'youtubeVideoCodec': 'h264',
+                'downloadMode': 'auto',
+              },
+              cancelToken: task.cancelToken,
+            );
+
+            if (response.statusCode != 200 || response.data is! Map) {
+              lastError = 'Cobalt HTTP ${response.statusCode}';
+              continue;
+            }
+
+            final data = Map<String, dynamic>.from(response.data as Map);
+            final status = data['status']?.toString() ?? '';
+            if (status == 'error' || status == 'rate-limit') {
+              lastError = data['text']?.toString() ?? data['code']?.toString() ?? status;
+              continue;
+            }
+
+            final candidates = <dynamic>[
+              data['url'],
+              data['downloadUrl'],
+              data['directUrl'],
+              data['stream'],
+              data['link'],
+            ];
+            for (final candidate in candidates) {
+              if (candidate is String && candidate.trim().isNotEmpty) {
+                downloadUrl = candidate.trim();
+                return true;
+              }
+            }
+
+            final picker = data['picker'];
+            if (picker is List) {
+              for (final item in picker) {
+                if (item is Map) {
+                  final value = item['url'];
+                  final type = item['type']?.toString();
+                  if (value is String && value.trim().isNotEmpty &&
+                      (type == null || type == 'video')) {
+                    downloadUrl = value.trim();
+                    return true;
+                  }
+                }
+              }
+            }
+
+            lastError = data['text']?.toString() ?? 'Cobalt returned no download URL';
+          } catch (e) {
+            if (e is DioException && CancelToken.isCancel(e)) rethrow;
+            lastError = '$endpoint: $e';
+          }
+        }
+        return false;
+      }
+
+      // TikTok: TikWM را اول امتحان می‌کنیم تا وابسته به یک Cobalt instance نباشیم.
+      if (isTikTok) {
+        await tryTikwm();
+      }
+
+      // سپس Cobalt؛ ترتیب برای هر سرویس بر اساس وضعیت فعلی instanceها تنظیم شده است.
+      if (downloadUrl == null) {
+        final ordered = <String>[];
+        if (isInstagram) {
+          ordered.addAll([
+            'https://nuko-c.meowing.de/',
+            'https://api-cobalt.eversiege.network/',
+            'https://cobaltapi.kittycat.boo/',
+            'https://bergung-api.hoffnungfuerdiezukunft.net/',
+          ]);
+        } else if (isYouTube) {
+          ordered.addAll([
+            'https://cobalt-alpha.wolfy.love/',
+            'https://api-cobalt.eversiege.network/',
+            'https://cobaltapi.kittycat.boo/',
+            'https://nuko-c.meowing.de/',
+            'https://bergung-api.hoffnungfuerdiezukunft.net/',
+          ]);
+        } else if (isTikTok) {
+          ordered.addAll([
+            'https://api-cobalt.eversiege.network/',
+            'https://nuko-c.meowing.de/',
+            'https://cobaltapi.kittycat.boo/',
+            'https://cobalt-alpha.wolfy.love/',
+          ]);
+        } else {
+          ordered.addAll(cobaltApiUrls);
+        }
+
+        // API رسمی را هم در انتها امتحان می‌کنیم.
+        ordered.add('https://api.cobalt.tools/api/json');
+
+        for (final api in ordered) {
+          if (await tryCobalt(api)) break;
         }
       }
 
-      if (!success || downloadUrl == null || downloadUrl!.isEmpty) {
-        final platform = _platformName(task.url);
-        throw Exception(
-          isEnglish
-              ? 'Could not get a $platform download link. Try another public link or VPN.'
-              : 'لینک دانلود $platform دریافت نشد. لطفاً لینک عمومی دیگری را امتحان کنید یا فیلترشکن را بررسی کنید. $lastError',
-        );
+      // اگر TikTok ویدیو کوتاه بود و TikWM در لحظه جواب نداد، یک بار دیگر با Cobalt امتحان شده است.
+      if (downloadUrl == null && isTikTok) {
+        await tryTikwm();
+      }
+
+      if (downloadUrl == null || downloadUrl!.isEmpty) {
+        throw Exception(lastError.isEmpty
+            ? 'No download URL returned by providers'
+            : lastError);
       }
 
       final dir = await getTemporaryDirectory();
       final filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${task.id}.mp4';
       task.filePath = filePath;
 
-      // فایل رسانه را مستقیماً از URL برگشتی می‌گیریم. برای tunnel/redirect
-      // نیز Dio در اندروید می‌تواند redirect را دنبال کند.
       final response = await dio.get<ResponseBody>(
         downloadUrl!,
         options: Options(
           responseType: ResponseType.stream,
-          followRedirects: true,
-          maxRedirects: 8,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
             'Accept': '*/*',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
           },
+          followRedirects: true,
+          maxRedirects: 10,
+          validateStatus: (status) => status != null && status >= 200 && status < 400,
         ),
         cancelToken: task.cancelToken,
       );
+
+      if (response.data == null) {
+        throw Exception('Empty media response');
+      }
 
       final totalHeader = response.headers.value(Headers.contentLengthHeader);
       task.totalBytes = int.tryParse(totalHeader ?? '') ?? -1;
@@ -669,67 +722,69 @@ class _HomeScreenState extends State<HomeScreen> {
       final file = File(filePath);
       if (await file.exists()) await file.delete();
       final raf = await file.open(mode: FileMode.write);
-      int lastReceivedBytes = 0;
+      var closed = false;
+
+      Future<void> closeFile() async {
+        if (!closed) {
+          closed = true;
+          await raf.close();
+        }
+      }
+
+      var lastReceivedBytes = 0;
 
       response.data!.stream.listen(
         (data) {
           if (task.isPaused) return;
           raf.writeFromSync(data);
           task.receivedBytes += data.length;
-
           if (task.receivedBytes - lastReceivedBytes > 100 * 1024 ||
               (task.totalBytes > 0 && task.receivedBytes >= task.totalBytes)) {
             lastReceivedBytes = task.receivedBytes;
             if (mounted) {
               setState(() {
                 if (task.totalBytes > 0) {
-                  task.progress = (task.receivedBytes / task.totalBytes).clamp(0.0, 1.0);
+                  task.progress = (task.receivedBytes / task.totalBytes).clamp(0.0, 1.0).toDouble();
                 }
               });
             }
           }
         },
         onDone: () async {
-          await raf.close();
-          if (!task.isPaused && mounted) {
+          await closeFile();
+          if (!task.isPaused && await file.exists() && await file.length() > 0) {
             try {
               await Gal.putVideo(filePath);
-              setState(() {
-                _activeDownloads.remove(task);
-                downloadedHistory.add(
-                  DownloadedVideoModel(
+              if (mounted) {
+                setState(() {
+                  _activeDownloads.remove(task);
+                  downloadedHistory.add(DownloadedVideoModel(
                     filePath: filePath,
                     date: DateTime.now().toString().substring(0, 19),
-                  ),
-                );
-              });
-              if (mounted) {
+                  ));
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      isEnglish
-                          ? 'Successfully saved to gallery!'
-                          : 'ویدیو با موفقیت دانلود و در گالری ذخیره شد!',
-                    ),
-                  ),
+                  SnackBar(content: Text(isEnglish
+                      ? 'Successfully saved to gallery!'
+                      : 'ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
                 );
               }
             } catch (e) {
               if (mounted) {
                 setState(() => _activeDownloads.remove(task));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(isEnglish ? 'File downloaded but could not be saved to gallery.' : 'فایل دانلود شد اما ذخیره در گالری انجام نشد.'),
-                    backgroundColor: Colors.red.shade800,
-                  ),
+                  SnackBar(content: Text(isEnglish
+                      ? 'Downloaded, but could not save to gallery.'
+                      : 'ویدیو دانلود شد اما ذخیره در گالری ناموفق بود.')),
                 );
               }
             }
+          } else if (mounted) {
+            setState(() => _activeDownloads.remove(task));
           }
         },
         onError: (e) async {
-          await raf.close();
-          if (e is DioException && CancelToken.isCancel(e)) return;
+          await closeFile();
           if (mounted) setState(() => _activeDownloads.remove(task));
         },
         cancelOnError: true,
@@ -737,36 +792,19 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       final isCancelled = e is DioException && CancelToken.isCancel(e);
       if (!isCancelled && mounted) {
+        setState(() => _activeDownloads.remove(task));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isEnglish
-                  ? 'Download failed. Instagram/YouTube servers may be temporarily unavailable.'
-                  : 'دانلود ناموفق بود. ممکن است سرور اینستاگرام یا یوتیوب موقتاً در دسترس نباشد.',
-              textDirection: TextDirection.rtl,
-            ),
+            content: Text(isEnglish
+                ? 'Download failed. The source server may be temporarily unavailable.'
+                : 'دانلود ناموفق بود. ممکن است سرور دانلود موقتاً در دسترس نباشد.',
+                textDirection: TextDirection.rtl),
             backgroundColor: Colors.red.shade800,
           ),
         );
-        setState(() => _activeDownloads.remove(task));
       }
     }
-  }
-
-  bool _isTikTokUrl(String url) {
-    final value = url.toLowerCase();
-    return value.contains('tiktok.com') || value.contains('vm.tiktok.com') || value.contains('vt.tiktok.com');
-  }
-
-  String _platformName(String url) {
-    final value = url.toLowerCase();
-    if (value.contains('instagram.com')) return 'Instagram';
-    if (value.contains('youtube.com') || value.contains('youtu.be')) return 'YouTube';
-    if (value.contains('tiktok.com')) return 'TikTok';
-    return 'ویدیو';
-  }
-
-}
+  }}
 
 class VideoPlayerScreen extends StatefulWidget {
   final String filePath;
