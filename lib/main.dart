@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -41,17 +40,14 @@ class DownloadingTaskModel {
   });
 }
 
-// لیست سرورهای معتبر Cobalt و APIهای جایگزین
-List<String> cobaltApiUrls = [
-  // Multi-platform fallback API (Instagram, YouTube, TikTok, ...).
-  'https://grabsocial.org/api/download',
-  // Existing/self-hosted endpoint.
-  'https://muhamadjafari-video-downloader-api.hf.space/download',
-  // Cobalt-compatible endpoints. Some public instances may require auth/rate-limit.
-  'https://api.cobalt.tools/api/json',
-  'https://cobalt-api.kwiatek.xyz/api/json',
-  'https://co.wuk.sh/api/json',
-  'https://api.cobalt.best/api/json',
+// سرورهای Cobalt که در نسخه جدید API از endpoint ریشه (/) استفاده می‌کنند.
+// چند سرور پشتیبان قرار داده شده تا خرابی یک سرور باعث از کار افتادن دانلود نشود.
+final List<String> cobaltApiUrls = [
+  'https://cobaltapi.kittycat.boo',
+  'https://api-cobalt.eversiege.network',
+  'https://grapefruit.clxxped.lol',
+  'https://nuko-c.meowing.de',
+  'https://bergung-api.hoffnungfuerdiezukunft.net',
 ];
 
 class AdModel {
@@ -503,75 +499,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _startConcurrentDownload(task);
   }
 
-  String? _extractDownloadUrl(dynamic rawData) {
-    dynamic data = rawData;
-
-    // Dio may return JSON as a string when a server sends the wrong content type.
-    if (data is String) {
-      try {
-        data = jsonDecode(data);
-      } catch (_) {
-        return data.startsWith('http') ? data : null;
-      }
-    }
-
-    if (data is! Map) return null;
-
-    String? asUrl(dynamic value) {
-      if (value is String && value.startsWith('http')) return value;
-      return null;
-    }
-
-    // GrabSocial-style response: downloadLinks: [{url: ...}]
-    final links = data['downloadLinks'];
-    if (links is List) {
-      for (final item in links) {
-        if (item is Map) {
-          final url = asUrl(item['url']);
-          if (url != null) return url;
-        }
-      }
-    }
-
-    // Common downloader API response fields.
-    for (final key in ['url', 'downloadUrl', 'video_url', 'download', 'link', 'stream', 'play', 'hdplay', 'wmplay']) {
-      final url = asUrl(data[key]);
-      if (url != null) return url;
-    }
-
-    // Cobalt picker response.
-    final picker = data['picker'];
-    if (picker is List) {
-      for (final item in picker) {
-        if (item is Map) {
-          final url = asUrl(item['url']);
-          if (url != null) return url;
-        }
-      }
-    }
-
-    // Some APIs wrap the actual response in data/result/media.
-    for (final key in ['data', 'result', 'media']) {
-      final nested = data[key];
-      if (nested is Map) {
-        final url = _extractDownloadUrl(nested);
-        if (url != null) return url;
-      } else if (nested is List) {
-        for (final item in nested) {
-          final url = _extractDownloadUrl(item);
-          if (url != null) return url;
-        }
-      }
-    }
-
-    return null;
-  }
-
   Future<void> _startConcurrentDownload(DownloadingTaskModel task) async {
+    Dio? dio;
     try {
-      final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 30);
-      dio.options.receiveTimeout = const Duration(seconds: 30);
+      dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 90),
+        sendTimeout: const Duration(seconds: 25),
+      ));
 
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
@@ -582,151 +517,158 @@ class _HomeScreenState extends State<HomeScreen> {
 
       String? downloadUrl;
       bool success = false;
+      String lastError = '';
 
-      // ۱. تلاش با APIهای چندسرویسی و Cobalt.
-      // هر API پاسخ متفاوتی دارد، بنابراین همه فرمت‌های رایج لینک را استخراج می‌کنیم.
-      for (String apiUrl in cobaltApiUrls) {
+      // Cobalt جدید: endpoint اصلی POST / است؛ /api/json مربوط به API قدیمی است
+      // و از نوامبر 2024 دیگر نباید روی آن حساب کرد.
+      for (final apiBase in cobaltApiUrls) {
         try {
-          final isCustomServer = apiUrl.contains('muhamadjafari-video-downloader-api.hf.space');
-          final isGrabSocial = apiUrl.contains('grabsocial.org');
-
+          final endpoint = apiBase.endsWith('/') ? apiBase : '$apiBase/';
           final response = await dio.post(
-            apiUrl,
+            endpoint,
             options: Options(
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Android) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-                if (!isGrabSocial) 'Origin': 'https://cobalt.tools',
-                if (!isGrabSocial) 'Referer': 'https://cobalt.tools/',
+                'User-Agent': 'SocialDownloader/1.0 (Android)',
               },
+              validateStatus: (status) => status != null && status >= 200 && status < 500,
             ),
-            data: isCustomServer || isGrabSocial
-                ? {'url': task.url}
-                : {
-                    'url': task.url,
-                    // Current Cobalt API uses vCodec; the old youtubeVideoCodec
-                    // field is ignored by newer instances.
-                    'vCodec': 'h264',
-                  },
+            data: {
+              'url': task.url,
+              'videoQuality': '1080',
+              'vCodec': 'h264',
+              'audioFormat': 'mp3',
+              'downloadMode': 'auto',
+              'isAudioOnly': false,
+            },
             cancelToken: task.cancelToken,
           );
 
-          if (response.statusCode == 200 && response.data != null) {
-            downloadUrl = _extractDownloadUrl(response.data);
-            if (downloadUrl != null && downloadUrl.isNotEmpty) {
-              success = true;
+          if (response.statusCode != 200 || response.data == null) {
+            lastError = 'HTTP ${response.statusCode}';
+            continue;
+          }
+
+          final data = response.data;
+          if (data is! Map) {
+            lastError = 'Invalid API response';
+            continue;
+          }
+
+          final status = data['status']?.toString() ?? '';
+          if (status == 'error' || status == 'rate-limit') {
+            lastError = data['text']?.toString() ?? status;
+            continue;
+          }
+
+          // Cobalt ممکن است مستقیم redirect/stream/tunnel برگرداند.
+          final candidates = <dynamic>[
+            data['url'],
+            data['downloadUrl'],
+            data['directUrl'],
+            data['stream'],
+            data['link'],
+          ];
+
+          for (final candidate in candidates) {
+            if (candidate is String && candidate.trim().isNotEmpty) {
+              downloadUrl = candidate.trim();
               break;
             }
           }
-        } catch (_) {
+
+          // اگر picker برگشت، اولین ویدیو را انتخاب می‌کنیم.
+          if ((downloadUrl == null || downloadUrl!.isEmpty) && data['picker'] is List) {
+            final picker = data['picker'] as List;
+            for (final item in picker) {
+              if (item is Map && item['url'] is String && (item['type'] == null || item['type'] == 'video')) {
+                final value = item['url'].toString().trim();
+                if (value.isNotEmpty) {
+                  downloadUrl = value;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (downloadUrl != null && downloadUrl!.isNotEmpty) {
+            success = true;
+            break;
+          }
+
+          lastError = data['text']?.toString() ?? 'No media URL returned';
+        } catch (e) {
+          if (e is DioException && CancelToken.isCancel(e)) rethrow;
+          lastError = e.toString();
           continue;
         }
       }
 
-      // ۲. پشتیبان مخصوص اینستاگرام
-      if (!success && task.url.contains('instagram.com')) {
-        try {
-          final response = await dio.post(
-            'https://v3.viddl.com/api/download',
-            data: {'url': task.url},
-            options: Options(headers: {'Content-Type': 'application/json'}),
-            cancelToken: task.cancelToken,
-          );
-          if (response.statusCode == 200 && response.data != null) {
-            downloadUrl = response.data['url'] ?? response.data['video_url'];
-            if (downloadUrl != null && downloadUrl.isNotEmpty) {
-              success = true;
-            }
-          }
-        } catch (_) {}
-      }
-
-      // ۳. پشتیبان مخصوص یوتیوب
-      if (!success && (task.url.contains('youtube.com') || task.url.contains('youtu.be'))) {
-        try {
-          String videoId = '';
-          if (task.url.contains('youtu.be/')) {
-            videoId = task.url.split('youtu.be/')[1].split('?')[0];
-          } else if (task.url.contains('v=')) {
-            videoId = task.url.split('v=')[1].split('&')[0];
-          } else if (task.url.contains('shorts/')) {
-            videoId = task.url.split('shorts/')[1].split('?')[0];
-          }
-
-          if (videoId.isNotEmpty) {
-            final ytResponse = await dio.get(
-              'https://api.invidious.io/instances',
-            );
-            if (ytResponse.statusCode == 200 && ytResponse.data is List) {
-              for (var instance in (ytResponse.data as List).take(3)) {
-                try {
-                  String host = instance[1]['uri'];
-                  final streamRes = await dio.get('$host/api/v1/videos/$videoId');
-                  if (streamRes.statusCode == 200 && streamRes.data['formatStreams'] != null) {
-                    List streams = streamRes.data['formatStreams'];
-                    if (streams.isNotEmpty) {
-                      downloadUrl = streams.last['url'];
-                      if (downloadUrl != null && downloadUrl.isNotEmpty) {
-                        success = true;
-                        break;
-                      }
-                    }
-                  }
-                } catch (_) {}
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // ۴. پشتیبان دوم برای تیک‌تاک (TikWM)
-      if (!success && task.url.contains('tiktok.com')) {
+      // اگر Cobalt به هر دلیلی پاسخ نداد، TikTok را با TikWM نگه می‌داریم
+      // تا قابلیت فعلی برنامه خراب نشود.
+      if (!success && _isTikTokUrl(task.url)) {
         try {
           final response = await dio.get(
             'https://www.tikwm.com/api/',
             queryParameters: {'url': task.url},
             cancelToken: task.cancelToken,
           );
-          if (response.statusCode == 200 && response.data != null) {
-            final resData = response.data;
-            if (resData is Map && resData['data'] != null) {
-              final innerData = resData['data'];
-              downloadUrl = innerData['play'] ?? innerData['wmplay'] ?? innerData['hdplay'];
-              if (downloadUrl != null && downloadUrl.isNotEmpty) {
-                success = true;
+          if (response.statusCode == 200 && response.data is Map) {
+            final data = response.data as Map;
+            final inner = data['data'];
+            if (inner is Map) {
+              for (final key in ['hdplay', 'play', 'wmplay']) {
+                final value = inner[key];
+                if (value is String && value.isNotEmpty) {
+                  downloadUrl = value;
+                  success = true;
+                  break;
+                }
               }
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          if (e is DioException && CancelToken.isCancel(e)) rethrow;
+          lastError = e.toString();
+        }
       }
 
-      if (!success || downloadUrl == null) {
-        throw Exception(isEnglish ? 'Unable to extract download link. Please check link or VPN.' : 'امکان استخراج لینک دانلود وجود ندارد. لطفاً فیلترشکن خود را بررسی کنید.');
+      if (!success || downloadUrl == null || downloadUrl!.isEmpty) {
+        final platform = _platformName(task.url);
+        throw Exception(
+          isEnglish
+              ? 'Could not get a $platform download link. Try another public link or VPN.'
+              : 'لینک دانلود $platform دریافت نشد. لطفاً لینک عمومی دیگری را امتحان کنید یا فیلترشکن را بررسی کنید. $lastError',
+        );
       }
 
-      var dir = await getTemporaryDirectory();
-      var filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${task.id}.mp4';
+      final dir = await getTemporaryDirectory();
+      final filePath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${task.id}.mp4';
       task.filePath = filePath;
 
+      // فایل رسانه را مستقیماً از URL برگشتی می‌گیریم. برای tunnel/redirect
+      // نیز Dio در اندروید می‌تواند redirect را دنبال کند.
       final response = await dio.get<ResponseBody>(
-        downloadUrl,
+        downloadUrl!,
         options: Options(
           responseType: ResponseType.stream,
-          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
+          followRedirects: true,
+          maxRedirects: 8,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+            'Accept': '*/*',
+          },
         ),
         cancelToken: task.cancelToken,
       );
 
       final totalHeader = response.headers.value(Headers.contentLengthHeader);
-      task.totalBytes = totalHeader != null ? int.parse(totalHeader) : -1;
+      task.totalBytes = int.tryParse(totalHeader ?? '') ?? -1;
 
       final file = File(filePath);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      if (await file.exists()) await file.delete();
       final raf = await file.open(mode: FileMode.write);
-
       int lastReceivedBytes = 0;
 
       response.data!.stream.listen(
@@ -734,13 +676,14 @@ class _HomeScreenState extends State<HomeScreen> {
           if (task.isPaused) return;
           raf.writeFromSync(data);
           task.receivedBytes += data.length;
-          
-          if (task.receivedBytes - lastReceivedBytes > 100 * 1024 || task.receivedBytes == task.totalBytes) {
+
+          if (task.receivedBytes - lastReceivedBytes > 100 * 1024 ||
+              (task.totalBytes > 0 && task.receivedBytes >= task.totalBytes)) {
             lastReceivedBytes = task.receivedBytes;
             if (mounted) {
               setState(() {
                 if (task.totalBytes > 0) {
-                  task.progress = task.receivedBytes / task.totalBytes;
+                  task.progress = (task.receivedBytes / task.totalBytes).clamp(0.0, 1.0);
                 }
               });
             }
@@ -748,60 +691,81 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         onDone: () async {
           await raf.close();
-          if (!task.isPaused) {
-            await Gal.putVideo(filePath);
-            setState(() {
-              _activeDownloads.remove(task);
-              downloadedHistory.add(
-                DownloadedVideoModel(
-                  filePath: filePath,
-                  date: DateTime.now().toString().substring(0, 19),
-                ),
-              );
-            });
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(isEnglish ? 'Successfully saved to gallery!' : 'ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
-              );
+          if (!task.isPaused && mounted) {
+            try {
+              await Gal.putVideo(filePath);
+              setState(() {
+                _activeDownloads.remove(task);
+                downloadedHistory.add(
+                  DownloadedVideoModel(
+                    filePath: filePath,
+                    date: DateTime.now().toString().substring(0, 19),
+                  ),
+                );
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isEnglish
+                          ? 'Successfully saved to gallery!'
+                          : 'ویدیو با موفقیت دانلود و در گالری ذخیره شد!',
+                    ),
+                  ),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                setState(() => _activeDownloads.remove(task));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(isEnglish ? 'File downloaded but could not be saved to gallery.' : 'فایل دانلود شد اما ذخیره در گالری انجام نشد.'),
+                    backgroundColor: Colors.red.shade800,
+                  ),
+                );
+              }
             }
           }
         },
         onError: (e) async {
           await raf.close();
-          bool isCancelled = false;
-          if (e is DioException) {
-            isCancelled = CancelToken.isCancel(e);
-          }
-          if (!isCancelled) {
-            setState(() {
-              _activeDownloads.remove(task);
-            });
-          }
+          if (e is DioException && CancelToken.isCancel(e)) return;
+          if (mounted) setState(() => _activeDownloads.remove(task));
         },
         cancelOnError: true,
       );
-
     } catch (e) {
-      bool isCancelled = false;
-      if (e is DioException) {
-        isCancelled = CancelToken.isCancel(e);
-      }
-
-      if (!isCancelled) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(isEnglish ? 'Download failed. Check internet/VPN.' : 'خطا در دانلود. اینترنت یا فیلترشکن را چک کنید.', textDirection: TextDirection.rtl),
-              backgroundColor: Colors.red.shade800,
+      final isCancelled = e is DioException && CancelToken.isCancel(e);
+      if (!isCancelled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isEnglish
+                  ? 'Download failed. Instagram/YouTube servers may be temporarily unavailable.'
+                  : 'دانلود ناموفق بود. ممکن است سرور اینستاگرام یا یوتیوب موقتاً در دسترس نباشد.',
+              textDirection: TextDirection.rtl,
             ),
-          );
-        }
-        setState(() {
-          _activeDownloads.remove(task);
-        });
+            backgroundColor: Colors.red.shade800,
+          ),
+        );
+        setState(() => _activeDownloads.remove(task));
       }
     }
   }
+
+  bool _isTikTokUrl(String url) {
+    final value = url.toLowerCase();
+    return value.contains('tiktok.com') || value.contains('vm.tiktok.com') || value.contains('vt.tiktok.com');
+  }
+
+  String _platformName(String url) {
+    final value = url.toLowerCase();
+    if (value.contains('instagram.com')) return 'Instagram';
+    if (value.contains('youtube.com') || value.contains('youtu.be')) return 'YouTube';
+    if (value.contains('tiktok.com')) return 'TikTok';
+    return 'ویدیو';
+  }
+
 }
 
 class VideoPlayerScreen extends StatefulWidget {
