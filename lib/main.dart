@@ -32,46 +32,25 @@ class DownloadScreen extends StatefulWidget {
 
 class _DownloadScreenState extends State<DownloadScreen> {
   final TextEditingController _urlController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  
   bool _isLoading = false;
-  bool _isLoggedIn = false;
-  bool isEnglish = false; // می‌توانید زبان را به دلخواه مدیریت کنید
   String _resultMessage = '';
   String? _directVideoUrl;
 
   // آدرس سرور اختصاصی شما در هاگینگ‌فیس
   final String _apiUrl = 'https://muhamadjafari-video-downloader-api.hf.space/download';
 
-  // تابع بررسی رمز عبور (پنل مدیریت / توربو مود)
-  void _checkPassword() {
-    if (_passwordController.text == '05050505') {
-      setState(() {
-        _isLoggedIn = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isEnglish ? 'Welcome!' : 'خوش آمدید!')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isEnglish ? 'Invalid credentials' : 'اطلاعات اشتباه است')),
-      );
-    }
-  }
-
-  // تابع ارسال درخواست به سرور پایتون برای دانلود ویدیو
   Future<void> _extractVideo() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
       setState(() {
-        _resultMessage = isEnglish ? 'Please enter a valid URL' : 'لطفاً یک لینک معتبر وارد کنید.';
+        _resultMessage = 'لطفاً یک لینک معتبر وارد کنید.';
       });
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _resultMessage = isEnglish ? 'Connecting to private server...' : 'در حال ارتباط با سرور اختصاصی...';
+      _resultMessage = 'در حال ارتباط با سرور اختصاصی...';
       _directVideoUrl = null;
     });
 
@@ -115,84 +94,53 @@ class _DownloadScreenState extends State<DownloadScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEnglish ? 'Private Video Downloader' : 'دانلودر اختصاصی ویدیو'),
+        title: const Text('دانلودر اختصاصی ویدیو'),
         centerTitle: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // بخش ورود رمز عبور (در صورت لاگین نبودن)
-              if (!_isLoggedIn) ...[
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: isEnglish ? 'Admin / Turbo Password' : 'رمز عبور مدیریت / توربو',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.lock),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: _checkPassword,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(isEnglish ? 'Login' : 'ورود'),
-                ),
-                const Divider(height: 40),
-              ],
-
-              // بخش اصلی دانلودر (پس از ورود یا به صورت پیش‌فرض)
-              TextField(
-                controller: _urlController,
-                decoration: InputDecoration(
-                  labelText: isEnglish ? 'Video URL' : 'لینک ویدیو (یوتیوب، اینستاگرام و...)',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.link),
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _urlController,
+              decoration: const InputDecoration(
+                labelText: 'لینک ویدیو (یوتیوب، اینستاگرام و...)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.link),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _extractVideo,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEnglish ? 'Get Direct Link' : 'دریافت لینک مستقیم', style: const TextStyle(fontSize: 16)),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _extractVideo,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              const SizedBox(height: 24),
-              Text(
-                _resultMessage,
-                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('دریافت لینک مستقیم', style: TextStyle(fontSize: 16)),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              _resultMessage,
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+            const SizedBox(height: 16),
+            if (_directVideoUrl != null)
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                onPressed: () {
+                  // اینجا می‌توانید لینک مستقیم را به پکیج دانلود بدهید یا کپی کنید
+                  print("لینک مستقیم برای دانلود: $_directVideoUrl");
+                },
+                icon: const Icon(Icons.download),
+                label: const Text('آماده برای دانلود فایل'),
               ),
-              const SizedBox(height: 16),
-              if (_directVideoUrl != null)
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    // اینجا می‌توانید لینک مستقیم را به موتور دانلود برنامه ارسال کنید
-                    print("لینک آماده دانلود: $_directVideoUrl");
-                  },
-                  icon: const Icon(Icons.download),
-                  label: Text(isEnglish ? 'Ready to Download' : 'آماده برای دانلود فایل'),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
