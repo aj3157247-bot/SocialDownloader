@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart'; // اضافه شده برای مدیریت گواهی SSL
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -105,7 +106,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
   
-  // لیست مدیریت دانلودهای همزمان
   final List<DownloadingTaskModel> _activeDownloads = [];
 
   @override
@@ -425,7 +425,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // ایجاد یک تسک جدید برای دانلود همزمان
     final task = DownloadingTaskModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       url: formattedUrl,
@@ -436,7 +435,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _activeDownloads.add(task);
     });
 
-    // شروع فرآیند دانلود در پس‌زمینه (بدون مسدودسازی سایر دانلودها)
     _startConcurrentDownload(task);
   }
 
@@ -446,10 +444,16 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 30);
 
+      // [بخش اصلاح شده برای حل خطای Handshake / SSL]
+      (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = HttpClient();
+        client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+        return client;
+      };
+
       String? downloadUrl;
       bool success = false;
 
-      // جستجو در سرورهای کوبالت
       for (String apiUrl in cobaltApiUrls) {
         try {
           final response = await dio.post(
@@ -503,7 +507,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // جایگزین اینستاگرام
       if (!success && (task.url.contains('instagram.com') || task.url.contains('instagr.am'))) {
         try {
           final response = await dio.get(
@@ -523,7 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (_) {}
       }
 
-      // جایگزین تیک‌تاک
       if (!success && (task.url.contains('tiktok.com') || task.url.contains('vt.tiktok.com'))) {
         try {
           final response = await dio.get(
