@@ -43,8 +43,8 @@ class DownloadingTaskModel {
 List<String> cobaltApiUrls = [
   'https://api.cobalt.tools/api/json',
   'https://co.wuk.sh/api/json',
-  'https://cobalt.kwiatek.xyz/api/json',
   'https://api.cobalt.best/api/json',
+  'https://cobalt.kwiatek.xyz/api/json',
 ];
 
 class AdModel {
@@ -73,7 +73,6 @@ List<AdModel> globalAds = [
   ),
 ];
 
-// مدیریت زبان برنامه
 bool isEnglish = false;
 
 void main() {
@@ -88,7 +87,6 @@ class SocialDownloaderApp extends StatefulWidget {
 }
 
 class _SocialDownloaderAppState extends State<SocialDownloaderApp> {
-  // تابع سراسری برای تغییر زبان در کل برنامه
   void toggleLanguage() {
     setState(() {
       isEnglish = !isEnglish;
@@ -137,7 +135,6 @@ class _HomeScreenState extends State<HomeScreen> {
             : (isEnglish ? 'Admin Panel' : 'پنل مدیریت ادمین')),
         centerTitle: true,
         actions: [
-          // دکمه تغییر زبان در گوشه بالای صفحه
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Center(
@@ -230,7 +227,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             isEnglish ? 'High Speed & Smart Download' : 'دانلود همزمان و هوشمند',
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
-                          // برچسب سرعت ۳ برابری در گوشه کادر
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
@@ -368,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? (isEnglish ? 'Paused' : 'متوقف شده')
                                     : (task.totalBytes > 0
                                         ? (isEnglish ? 'Downloading: ${(task.progress * 100).toStringAsFixed(0)}%' : 'در حال دانلود: ${(task.progress * 100).toStringAsFixed(0)}%')
-                                        : (isEnglish ? 'Receiving... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} MB)' : 'در حال دریافت... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)')),
+                                        : (isEnglish ? 'Connecting & Fetching... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} MB)' : 'در حال اتصال و دریافت... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)')),
                                 style: const TextStyle(fontSize: 11, color: Colors.white70),
                               ),
                             ],
@@ -503,57 +499,57 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startConcurrentDownload(DownloadingTaskModel task) async {
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 30);
-      dio.options.receiveTimeout = const Duration(seconds: 30);
+      dio.options.connectTimeout = const Duration(seconds: 40);
+      dio.options.receiveTimeout = const Duration(seconds: 40);
 
+      // تنظیم قدرتمند برای عبور از خطاهای Handshake و گواهینامه‌های SSL
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
         client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+        client.connectionTimeout = const Duration(seconds: 30);
         return client;
       };
 
       String? downloadUrl;
       bool success = false;
 
-      // ۱. یوتیوب
-      if (task.url.contains('youtube.com') || task.url.contains('youtu.be')) {
-        for (String apiUrl in cobaltApiUrls) {
-          try {
-            final response = await dio.post(
-              apiUrl,
-              options: Options(
-                headers: {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                  'Referer': 'https://cobalt.tools/',
-                  'Origin': 'https://cobalt.tools',
-                },
-              ),
-              data: {
-                'url': task.url,
-                'videoQuality': 'max',
-                'downloadMode': 'auto',
+      // سیستم چندگانه جستجو و دریافت لینک از طریق تمامی سرورهای فعال (کوآبالت و ای‌پی‌آی‌های پشتیبان)
+      for (String apiUrl in cobaltApiUrls) {
+        try {
+          final response = await dio.post(
+            apiUrl,
+            options: Options(
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://cobalt.tools/',
+                'Origin': 'https://cobalt.tools',
               },
-              cancelToken: task.cancelToken,
-            );
+            ),
+            data: {
+              'url': task.url,
+              'videoQuality': 'max',
+              'downloadMode': 'auto',
+            },
+            cancelToken: task.cancelToken,
+          );
 
-            if (response.statusCode == 200 && response.data != null) {
-              final data = response.data;
-              downloadUrl = data['url'] ?? (data['picker'] != null && (data['picker'] as List).isNotEmpty ? data['picker'][0]['url'] : null);
-              if (downloadUrl != null && downloadUrl.isNotEmpty) {
-                success = true;
-                break;
-              }
+          if (response.statusCode == 200 && response.data != null) {
+            final data = response.data;
+            downloadUrl = data['url'] ?? (data['picker'] != null && (data['picker'] as List).isNotEmpty ? data['picker'][0]['url'] : null);
+            if (downloadUrl != null && downloadUrl.isNotEmpty) {
+              success = true;
+              break;
             }
-          } catch (_) {
-            continue;
           }
+        } catch (_) {
+          continue; // اگر سرور اول خطا داد، خودکار سرور بعدی را تست می‌کند
         }
       }
 
-      // ۲. اینستاگرام
-      if (!success && (task.url.contains('instagram.com') || task.url.contains('instagr.am'))) {
+      // اگر روش اول جواب نداد، برای تیک‌تاک و اینستاگرام از ای‌پی‌آی دوم (tikwm) استفاده کن
+      if (!success) {
         try {
           final response = await dio.get(
             'https://www.tikwm.com/api/',
@@ -569,51 +565,10 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         } catch (_) {}
-
-        if (!success) {
-          for (String apiUrl in cobaltApiUrls) {
-            try {
-              final response = await dio.post(
-                apiUrl,
-                options: Options(
-                  headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0',
-                  },
-                ),
-                data: {'url': task.url},
-                cancelToken: task.cancelToken,
-              );
-              if (response.statusCode == 200 && response.data['url'] != null) {
-                downloadUrl = response.data['url'];
-                success = true;
-                break;
-              }
-            } catch (_) {}
-          }
-        }
-      }
-
-      // ۳. تیک‌تاک
-      if (!success && (task.url.contains('tiktok.com') || task.url.contains('vt.tiktok.com'))) {
-        try {
-          final response = await dio.get(
-            'https://www.tikwm.com/api/',
-            queryParameters: {'url': task.url},
-            cancelToken: task.cancelToken,
-          );
-          if (response.statusCode == 200 && response.data['code'] == 0) {
-            downloadUrl = response.data['data']['play'];
-            if (downloadUrl != null && downloadUrl.isNotEmpty) {
-              success = true;
-            }
-          }
-        } catch (_) {}
       }
 
       if (!success || downloadUrl == null) {
-        throw Exception(isEnglish ? 'Unable to extract download link.' : 'امکان استخراج لینک دانلود وجود ندارد.');
+        throw Exception(isEnglish ? 'Unable to extract download link. Please check link or VPN.' : 'امکان استخراج لینک دانلود وجود ندارد. لطفاً فیلترشکن خود را بررسی کنید.');
       }
 
       var dir = await getTemporaryDirectory();
@@ -689,11 +644,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
     } catch (e) {
-      if (!CancelToken.isCancel(e as DioException)) {
+      if (!CancelToken.isCancel(e is DioException ? e : CancelToken())) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error: $e', textDirection: TextDirection.ltr),
+              content: Text(isEnglish ? 'Download failed. Check internet/VPN.' : 'خطا در دانلود. اینترنت یا فیلترشکن را چک کنید.', textDirection: TextDirection.rtl),
               backgroundColor: Colors.red.shade800,
             ),
           );
