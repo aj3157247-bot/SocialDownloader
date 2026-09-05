@@ -73,12 +73,27 @@ List<AdModel> globalAds = [
   ),
 ];
 
+// مدیریت زبان برنامه
+bool isEnglish = false;
+
 void main() {
   runApp(const SocialDownloaderApp());
 }
 
-class SocialDownloaderApp extends StatelessWidget {
+class SocialDownloaderApp extends StatefulWidget {
   const SocialDownloaderApp({super.key});
+
+  @override
+  State<SocialDownloaderApp> createState() => _SocialDownloaderAppState();
+}
+
+class _SocialDownloaderAppState extends State<SocialDownloaderApp> {
+  // تابع سراسری برای تغییر زبان در کل برنامه
+  void toggleLanguage() {
+    setState(() {
+      isEnglish = !isEnglish;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,14 +104,15 @@ class SocialDownloaderApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF121212),
       ),
-      home: const HomeScreen(),
+      home: HomeScreen(onLanguageChanged: toggleLanguage),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback onLanguageChanged;
+  const HomeScreen({super.key, required this.onLanguageChanged});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -105,7 +121,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _urlController = TextEditingController();
-  
   final List<DownloadingTaskModel> _activeDownloads = [];
 
   @override
@@ -117,8 +132,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'دانلودر هوشمند سوشال مدیا' : 'پنل مدیریت ادمین'),
+        title: Text(_currentIndex == 0 
+            ? (isEnglish ? 'Smart Social Downloader' : 'دانلودر هوشمند سوشال مدیا') 
+            : (isEnglish ? 'Admin Panel' : 'پنل مدیریت ادمین')),
         centerTitle: true,
+        actions: [
+          // دکمه تغییر زبان در گوشه بالای صفحه
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Center(
+              child: InkWell(
+                onTap: () {
+                  widget.onLanguageChanged();
+                  setState(() {});
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.blueAccent),
+                  ),
+                  child: Text(
+                    isEnglish ? 'FA 🇮🇷' : 'EN 🇺🇸',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: pages[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -128,14 +171,14 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentIndex = index;
           });
         },
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.download),
-            label: 'دانلود',
+            icon: const Icon(Icons.download),
+            label: isEnglish ? 'Download' : 'دانلود',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.admin_panel_settings),
-            label: 'مدیریت ادمین',
+            icon: const Icon(Icons.admin_panel_settings),
+            label: isEnglish ? 'Admin' : 'مدیریت ادمین',
           ),
         ],
       ),
@@ -173,21 +216,40 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.video_collection_rounded, size: 36, color: Colors.white),
+                  child: const Icon(Icons.bolt, size: 36, color: Colors.amberAccent),
                 ),
                 const SizedBox(width: 16),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'دانلود همزمان و هوشمند',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isEnglish ? 'High Speed & Smart Download' : 'دانلود همزمان و هوشمند',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          // برچسب سرعت ۳ برابری در گوشه کادر
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isEnglish ? '⚡ 3X Turbo' : '⚡ سرعت ۳برابر',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black),
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
-                        'پشتیبانی از تیک‌تاک، اینستاگرام و یوتیوب • دانلود چند ویدیو به صورت همزمان',
-                        style: TextStyle(fontSize: 12, color: Colors.white70, height: 1.3),
+                        isEnglish 
+                            ? 'Support TikTok, Instagram & YouTube • Optimized for max speed' 
+                            : 'پشتیبانی از تیک‌تاک، اینستاگرام و یوتیوب • بهینه‌سازی شده برای سرعت بالا',
+                        style: const TextStyle(fontSize: 11, color: Colors.white70, height: 1.3),
                       ),
                     ],
                   ),
@@ -196,9 +258,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'لینک کامل ویدیو را وارد کنید:',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          Text(
+            isEnglish ? 'Enter full video link below:' : 'لینک کامل ویدیو را وارد کنید:',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 12),
           Row(
@@ -227,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () {
                   if (_urlController.text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('لطفاً یک لینک معتبر وارد کنید')),
+                      SnackBar(content: Text(isEnglish ? 'Please enter a valid link' : 'لطفاً یک لینک معتبر وارد کنید')),
                     );
                     return;
                   }
@@ -236,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _playAdsAndStartDownload(context, urlToDownload);
                 },
                 icon: const Icon(Icons.download_rounded),
-                label: const Text('افزودن به صف دانلود'),
+                label: Text(isEnglish ? 'Add' : 'افزودن'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                   shape: RoundedRectangleBorder(
@@ -248,9 +310,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 16),
           if (_activeDownloads.isNotEmpty) ...[
-            const Text(
-              'دانلودهای فعال:',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orangeAccent),
+            Text(
+              isEnglish ? 'Active Downloads:' : 'دانلودهای فعال:',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orangeAccent),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -303,10 +365,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 task.isPaused
-                                    ? 'متوقف شده'
+                                    ? (isEnglish ? 'Paused' : 'متوقف شده')
                                     : (task.totalBytes > 0
-                                        ? 'در حال دانلود: ${(task.progress * 100).toStringAsFixed(0)}%'
-                                        : 'در حال دریافت... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)'),
+                                        ? (isEnglish ? 'Downloading: ${(task.progress * 100).toStringAsFixed(0)}%' : 'در حال دانلود: ${(task.progress * 100).toStringAsFixed(0)}%')
+                                        : (isEnglish ? 'Receiving... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} MB)' : 'در حال دریافت... (${(task.receivedBytes / 1024 / 1024).toStringAsFixed(1)} مگابایت)')),
                                 style: const TextStyle(fontSize: 11, color: Colors.white70),
                               ),
                             ],
@@ -320,17 +382,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           const SizedBox(height: 10),
-          const Text(
-            'ویدیوهای دانلود شده اخیر در این برنامه (برای پخش لمس کنید):',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          Text(
+            isEnglish ? 'Recent downloaded videos (Tap to play):' : 'ویدیوهای دانلود شده اخیر در این برنامه (برای پخش لمس کنید):',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: downloadedHistory.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      'هنوز ویدیویی دانلود نشده است',
-                      style: TextStyle(color: Colors.grey),
+                      isEnglish ? 'No videos downloaded yet' : 'هنوز ویدیویی دانلود نشده است',
+                      style: const TextStyle(color: Colors.grey),
                     ),
                   )
                 : ListView.builder(
@@ -345,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListTile(
                           leading: const Icon(Icons.video_file, color: Colors.blueAccent, size: 36),
                           title: Text(
-                            'ویدیو شماره ${index + 1}',
+                            isEnglish ? 'Video #${index + 1}' : 'ویدیو شماره ${index + 1}',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text(item.date, style: const TextStyle(fontSize: 12)),
@@ -366,11 +428,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   try {
                                     await Share.shareXFiles(
                                       [XFile(item.filePath)],
-                                      text: 'دانلود شده از اپلیکیشن Social Downloader Pro',
+                                      text: 'Downloaded from Social Downloader Pro',
                                     );
                                   } catch (e) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('خطا در اشتراک‌گذاری: $e')),
+                                      SnackBar(content: Text('Error: $e')),
                                     );
                                   }
                                 },
@@ -382,10 +444,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                     downloadedHistory.removeAt(index);
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('ویدیو از لیست صفحه پاک شد')),
+                                    SnackBar(content: Text(isEnglish ? 'Removed from list' : 'ویدیو از لیست صفحه پاک شد')),
                                   );
                                 },
-                                tooltip: 'حذف از لیست',
+                                tooltip: 'حذف',
                               ),
                             ],
                           ),
@@ -453,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
-      // ۱. اگر لینک یوتیوب است
+      // ۱. یوتیوب
       if (task.url.contains('youtube.com') || task.url.contains('youtu.be')) {
         for (String apiUrl in cobaltApiUrls) {
           try {
@@ -490,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // ۲. اگر لینک اینستاگرام است
+      // ۲. اینستاگرام
       if (!success && (task.url.contains('instagram.com') || task.url.contains('instagr.am'))) {
         try {
           final response = await dio.get(
@@ -533,7 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // ۳. اگر لینک تیک‌تاک است
+      // ۳. تیک‌تاک
       if (!success && (task.url.contains('tiktok.com') || task.url.contains('vt.tiktok.com'))) {
         try {
           final response = await dio.get(
@@ -551,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || downloadUrl == null) {
-        throw Exception('امکان استخراج لینک دانلود برای این پلتفرم وجود ندارد یا لینک نامعتبر است.');
+        throw Exception(isEnglish ? 'Unable to extract download link.' : 'امکان استخراج لینک دانلود وجود ندارد.');
       }
 
       var dir = await getTemporaryDirectory();
@@ -576,17 +638,23 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       final raf = await file.open(mode: FileMode.write);
 
+      int lastReceivedBytes = 0;
+
       response.data!.stream.listen(
         (data) {
           if (task.isPaused) return;
           raf.writeFromSync(data);
           task.receivedBytes += data.length;
-          if (mounted) {
-            setState(() {
-              if (task.totalBytes > 0) {
-                task.progress = task.receivedBytes / task.totalBytes;
-              }
-            });
+          
+          if (task.receivedBytes - lastReceivedBytes > 100 * 1024 || task.receivedBytes == task.totalBytes) {
+            lastReceivedBytes = task.receivedBytes;
+            if (mounted) {
+              setState(() {
+                if (task.totalBytes > 0) {
+                  task.progress = task.receivedBytes / task.totalBytes;
+                }
+              });
+            }
           }
         },
         onDone: () async {
@@ -604,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
             });
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
+                SnackBar(content: Text(isEnglish ? 'Successfully saved to gallery!' : 'ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
               );
             }
           }
@@ -625,7 +693,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('خطا در دانلود: $e', textDirection: TextDirection.rtl),
+              content: Text('Error: $e', textDirection: TextDirection.ltr),
               backgroundColor: Colors.red.shade800,
             ),
           );
@@ -670,7 +738,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('پخش ویدیو')),
+      appBar: AppBar(title: Text(isEnglish ? 'Video Player' : 'پخش ویدیو')),
       body: Center(
         child: _controller.value.isInitialized
             ? Column(
@@ -761,7 +829,7 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
       onWillPop: () async => _canClose,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('درحال نمایش تبلیغ اسپانسر'),
+          title: Text(isEnglish ? 'Sponsor Ad' : 'درحال نمایش تبلیغ اسپانسر'),
           automaticallyImplyLeading: false,
         ),
         body: Center(
@@ -819,9 +887,9 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  const Text(
-                    'لطفاً برای حمایت از اپلیکیشن تا اتمام تبلیغ صبور باشید...',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  Text(
+                    isEnglish ? 'Please wait until the ad ends...' : 'لطفاً برای حمایت از اپلیکیشن تا اتمام تبلیغ صبور باشید...',
+                    style: const TextStyle(color: Colors.grey, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 35),
@@ -833,7 +901,9 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                       border: Border.all(color: _canClose ? Colors.green : Colors.orange),
                     ),
                     child: Text(
-                      _canClose ? 'تبلیغ به پایان رسید' : 'تایم باقی‌مانده: $_timeLeft ثانیه',
+                      _canClose 
+                          ? (isEnglish ? 'Ad Finished' : 'تبلیغ به پایان رسید') 
+                          : (isEnglish ? 'Time remaining: $_timeLeft s' : 'تایم باقی‌مانده: $_timeLeft ثانیه'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -848,7 +918,9 @@ class _AdPlayerScreenState extends State<AdPlayerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text(_canClose ? 'ادامه دانلود ویدیو' : 'صبر کنید تا تایم تمام شود...'),
+                    child: Text(_canClose 
+                        ? (isEnglish ? 'Continue Downloading' : 'ادامه دانلود ویدیو') 
+                        : (isEnglish ? 'Please wait...' : 'صبر کنید تا تایم تمام شود...')),
                   ),
                 ],
               ),
@@ -890,7 +962,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('پنل مدیریت پیشرفته', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(isEnglish ? 'Advanced Admin Panel' : 'پنل مدیریت پیشرفته', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   IconButton(
                     icon: const Icon(Icons.logout, color: Colors.red),
                     onPressed: () {
@@ -904,10 +976,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              const TabBar(
+              TabBar(
                 tabs: [
-                  Tab(text: 'مدیریت تبلیغات'),
-                  Tab(text: 'مدیریت سرورهای API'),
+                  Tab(text: isEnglish ? 'Ads Management' : 'مدیریت تبلیغات'),
+                  Tab(text: isEnglish ? 'API Servers' : 'مدیریت سرورهای API'),
                 ],
               ),
               const SizedBox(height: 10),
@@ -926,13 +998,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  const Text('افزودن تبلیغ جدید', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text(isEnglish ? 'Add New Ad' : 'افزودن تبلیغ جدید', style: const TextStyle(fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _adTitleController,
                                     maxLines: 4,
-                                    decoration: const InputDecoration(
-                                      labelText: 'متن تبلیغ',
+                                    decoration: InputDecoration(
+                                      labelText: isEnglish ? 'Ad Text' : 'متن تبلیغ',
                                       alignLabelWithHint: true,
                                     ),
                                   ),
@@ -940,15 +1012,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                   TextField(
                                     controller: _adLinkController,
                                     textDirection: TextDirection.ltr,
-                                    decoration: const InputDecoration(
-                                      labelText: 'لینک قابل کلیک (مثلاً https://wa.me/...)',
+                                    decoration: InputDecoration(
+                                      labelText: isEnglish ? 'Clickable Link (e.g. https://wa.me/...)' : 'لینک قابل کلیک (مثلاً https://wa.me/...)',
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _adDurationController,
                                     keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(labelText: 'تایم تبلیغ به ثانیه (مثلاً 5)'),
+                                    decoration: InputDecoration(labelText: isEnglish ? 'Duration in seconds (e.g. 5)' : 'تایم تبلیغ به ثانیه (مثلاً 5)'),
                                   ),
                                   const SizedBox(height: 12),
                                   ElevatedButton.icon(
@@ -967,19 +1039,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           _adDurationController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('تبلیغ جدید اضافه شد')),
+                                          SnackBar(content: Text(isEnglish ? 'Ad added' : 'تبلیغ جدید اضافه شد')),
                                         );
                                       }
                                     },
                                     icon: const Icon(Icons.add),
-                                    label: const Text('ثبت تبلیغ'),
+                                    label: Text(isEnglish ? 'Save Ad' : 'ثبت تبلیغ'),
                                   ),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text('لیست تبلیغات:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text(isEnglish ? 'Ads List:' : 'لیست تبلیغات:', style: const TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           ListView.builder(
                             shrinkWrap: true,
@@ -991,7 +1063,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
                                   title: Text(ad.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  subtitle: Text('مدت: ${ad.duration} ثانیه'),
+                                  subtitle: Text(isEnglish ? 'Duration: ${ad.duration}s' : 'مدت: ${ad.duration} ثانیه'),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -1032,12 +1104,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  const Text('افزودن سرور API جدید', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text(isEnglish ? 'Add New API Server' : 'افزودن سرور API جدید', style: const TextStyle(fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _serverController,
                                     textDirection: TextDirection.ltr,
-                                    decoration: const InputDecoration(labelText: 'آدرس کامل API'),
+                                    decoration: InputDecoration(labelText: isEnglish ? 'Full API URL' : 'آدرس کامل API'),
                                   ),
                                   const SizedBox(height: 12),
                                   ElevatedButton.icon(
@@ -1048,19 +1120,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                           _serverController.clear();
                                         });
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('سرور اضافه شد')),
+                                          SnackBar(content: Text(isEnglish ? 'Server added' : 'سرور اضافه شد')),
                                         );
                                       }
                                     },
                                     icon: const Icon(Icons.dns),
-                                    label: const Text('افزودن'),
+                                    label: Text(isEnglish ? 'Add' : 'افزودن'),
                                   ),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text('سرورهای فعال:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text(isEnglish ? 'Active Servers:' : 'سرورهای فعال:', style: const TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           ListView.builder(
                             shrinkWrap: true,
@@ -1102,16 +1174,16 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'ورود ادمین',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          Text(
+            isEnglish ? 'Admin Login' : 'ورود ادمین',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
           TextField(
             controller: _emailController,
             decoration: InputDecoration(
-              labelText: 'ایمیل ادمین',
+              labelText: isEnglish ? 'Admin Email' : 'ایمیل ادمین',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixIcon: const Icon(Icons.email),
             ),
@@ -1121,7 +1193,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             controller: _passwordController,
             obscureText: true,
             decoration: InputDecoration(
-              labelText: 'رمز عبور',
+              labelText: isEnglish ? 'Password' : 'رمز عبور',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixIcon: const Icon(Icons.lock),
             ),
@@ -1135,11 +1207,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   _isLoggedIn = true;
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('خوش آمدید!')),
+                  SnackBar(content: Text(isEnglish ? 'Welcome!' : 'خوش آمدید!')),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('اطلاعات اشتباه است')),
+                  SnackBar(content: Text(isEnglish ? 'Invalid credentials' : 'اطلاعات اشتباه است')),
                 );
               }
             },
@@ -1147,7 +1219,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('ورود'),
+            child: Text(isEnglish ? 'Login' : 'ورود'),
           ),
         ],
       ),
