@@ -40,13 +40,13 @@ class DownloadingTaskModel {
   });
 }
 
-// لینک سرور اختصاصی شما در هاگینگ‌فیس به عنوان سرور اصلی و اولویت‌دار اضافه شد
+// لیست سرورهای معتبر Cobalt و APIهای جایگزین
 List<String> cobaltApiUrls = [
   'https://muhamadjafari-video-downloader-api.hf.space/download',
   'https://api.cobalt.tools/api/json',
+  'https://cobalt-api.kwiatek.xyz/api/json',
   'https://co.wuk.sh/api/json',
   'https://api.cobalt.best/api/json',
-  'https://cobalt.kwiatek.xyz/api/json',
 ];
 
 class AdModel {
@@ -461,7 +461,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _extractValidUrl(String rawText) {
     String text = rawText.trim();
-    final regExp = RegExp(r'https?:\/\/[^\s]+|youtu\.be\/[^\s]+|instagram\.com\/[^\s]+|tiktok\.com\/[^\s]+|vt\.tiktok\.com\/[^\s]+');
+    final regExp = RegExp(r'https?:\/\/[^\s]+');
     final match = regExp.firstMatch(text);
     if (match != null) {
       text = match.group(0)!;
@@ -501,23 +501,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startConcurrentDownload(DownloadingTaskModel task) async {
     try {
       final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 40);
-      dio.options.receiveTimeout = const Duration(seconds: 40);
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 30);
 
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
         client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-        client.connectionTimeout = const Duration(seconds: 30);
+        client.connectionTimeout = const Duration(seconds: 25);
         return client;
       };
 
       String? downloadUrl;
       bool success = false;
 
-      // جستجو در سرورها (ابتدا سرور اختصاصی هاگینگ‌فیس خودتان و سپس سایر سرورها)
+      // ۱. تلاش با سرورهای عمومی Cobalt و هاگینگ‌فیس
       for (String apiUrl in cobaltApiUrls) {
         try {
-          // بررسی اینکه آیا سرور، سرور اختصاصی خودمان است یا سرورهای عمومی کوبالت
           bool isCustomServer = apiUrl.contains('muhamadjafari-video-downloader-api.hf.space');
 
           final response = await dio.post(
@@ -526,16 +525,19 @@ class _HomeScreenState extends State<HomeScreen> {
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Origin': 'https://cobalt.tools',
+                'Referer': 'https://cobalt.tools/',
               },
             ),
-            // ساختار درخواست بر اساس نوع سرور (اختصاصی یا عمومی) تنظیم می‌شود
             data: isCustomServer 
                 ? {'url': task.url} 
                 : {
                     'url': task.url,
-                    'videoQuality': 'max',
+                    'videoQuality': '1080',
+                    'youtubeVideoCodec': 'h264',
                     'downloadMode': 'auto',
+                    'isAudioOnly': false,
                   },
             cancelToken: task.cancelToken,
           );
@@ -544,20 +546,18 @@ class _HomeScreenState extends State<HomeScreen> {
             final data = response.data;
             if (data is Map) {
               if (isCustomServer) {
-                // دریافت پاسخ از سرور FastAPI اختصاصی هاگینگ‌فیس
                 if (data['success'] == true) {
                   downloadUrl = data['url'];
                 }
               } else {
-                // پشتیبانی از پاسخ سرورهای دیگر
-                downloadUrl = data['url'] ?? data['link'] ?? data['download'] ?? data['stream'];
+                if (data['status'] == 'redirect' || data['status'] == 'stream' || data['status'] == 'tunnel') {
+                  downloadUrl = data['url'];
+                } else {
+                  downloadUrl = data['url'] ?? data['link'] ?? data['download'] ?? data['stream'];
+                }
                 
                 if (downloadUrl == null && data['picker'] != null && data['picker'] is List && (data['picker'] as List).isNotEmpty) {
                   downloadUrl = data['picker'][0]['url'];
-                }
-                
-                if (downloadUrl == null && data['data'] != null && data['data'] is Map) {
-                  downloadUrl = data['data']['url'] ?? data['data']['play'] ?? data['data']['link'];
                 }
               }
             }
@@ -572,8 +572,64 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // پشتیبان دوم برای تیک‌تاک و اینستاگرام (tikwm)
-      if (!success) {
+      // ۲. پشتیبان مخصوص اینستاگرام
+      if (!success && task.url.contains('instagram.com')) {
+        try {
+          final response = await dio.post(
+            'https://v3.viddl.com/api/download',
+            data: {'url': task.url},
+            options: Options(headers: {'Content-Type': 'application/json'}),
+            cancelToken: task.cancelToken,
+          );
+          if (response.statusCode == 200 && response.data != null) {
+            downloadUrl = response.data['url'] ?? response.data['video_url'];
+            if (downloadUrl != null && downloadUrl.isNotEmpty) {
+              success = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // ۳. پشتیبان مخصوص یوتیوب
+      if (!success && (task.url.contains('youtube.com') || task.url.contains('youtu.be'))) {
+        try {
+          String videoId = '';
+          if (task.url.contains('youtu.be/')) {
+            videoId = task.url.split('youtu.be/')[1].split('?')[0];
+          } else if (task.url.contains('v=')) {
+            videoId = task.url.split('v=')[1].split('&')[0];
+          } else if (task.url.contains('shorts/')) {
+            videoId = task.url.split('shorts/')[1].split('?')[0];
+          }
+
+          if (videoId.isNotEmpty) {
+            final ytResponse = await dio.get(
+              'https://api.invidious.io/instances',
+            );
+            if (ytResponse.statusCode == 200 && ytResponse.data is List) {
+              for (var instance in (ytResponse.data as List).take(3)) {
+                try {
+                  String host = instance[1]['uri'];
+                  final streamRes = await dio.get('$host/api/v1/videos/$videoId');
+                  if (streamRes.statusCode == 200 && streamRes.data['formatStreams'] != null) {
+                    List streams = streamRes.data['formatStreams'];
+                    if (streams.isNotEmpty) {
+                      downloadUrl = streams.last['url'];
+                      if (downloadUrl != null && downloadUrl.isNotEmpty) {
+                        success = true;
+                        break;
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // ۴. پشتیبان دوم برای تیک‌تاک (TikWM)
+      if (!success && task.url.contains('tiktok.com')) {
         try {
           final response = await dio.get(
             'https://www.tikwm.com/api/',
@@ -584,7 +640,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final resData = response.data;
             if (resData is Map && resData['data'] != null) {
               final innerData = resData['data'];
-              downloadUrl = innerData['url'] ?? innerData['play'] ?? innerData['hdplay'];
+              downloadUrl = innerData['play'] ?? innerData['wmplay'] ?? innerData['hdplay'];
               if (downloadUrl != null && downloadUrl.isNotEmpty) {
                 success = true;
               }
