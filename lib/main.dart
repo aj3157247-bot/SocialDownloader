@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -42,7 +43,11 @@ class DownloadingTaskModel {
 
 // لیست سرورهای معتبر Cobalt و APIهای جایگزین
 List<String> cobaltApiUrls = [
+  // Multi-platform fallback API (Instagram, YouTube, TikTok, ...).
+  'https://grabsocial.org/api/download',
+  // Existing/self-hosted endpoint.
   'https://muhamadjafari-video-downloader-api.hf.space/download',
+  // Cobalt-compatible endpoints. Some public instances may require auth/rate-limit.
   'https://api.cobalt.tools/api/json',
   'https://cobalt-api.kwiatek.xyz/api/json',
   'https://co.wuk.sh/api/json',
@@ -498,6 +503,70 @@ class _HomeScreenState extends State<HomeScreen> {
     _startConcurrentDownload(task);
   }
 
+  String? _extractDownloadUrl(dynamic rawData) {
+    dynamic data = rawData;
+
+    // Dio may return JSON as a string when a server sends the wrong content type.
+    if (data is String) {
+      try {
+        data = jsonDecode(data);
+      } catch (_) {
+        return data.startsWith('http') ? data : null;
+      }
+    }
+
+    if (data is! Map) return null;
+
+    String? asUrl(dynamic value) {
+      if (value is String && value.startsWith('http')) return value;
+      return null;
+    }
+
+    // GrabSocial-style response: downloadLinks: [{url: ...}]
+    final links = data['downloadLinks'];
+    if (links is List) {
+      for (final item in links) {
+        if (item is Map) {
+          final url = asUrl(item['url']);
+          if (url != null) return url;
+        }
+      }
+    }
+
+    // Common downloader API response fields.
+    for (final key in ['url', 'downloadUrl', 'video_url', 'download', 'link', 'stream', 'play', 'hdplay', 'wmplay']) {
+      final url = asUrl(data[key]);
+      if (url != null) return url;
+    }
+
+    // Cobalt picker response.
+    final picker = data['picker'];
+    if (picker is List) {
+      for (final item in picker) {
+        if (item is Map) {
+          final url = asUrl(item['url']);
+          if (url != null) return url;
+        }
+      }
+    }
+
+    // Some APIs wrap the actual response in data/result/media.
+    for (final key in ['data', 'result', 'media']) {
+      final nested = data[key];
+      if (nested is Map) {
+        final url = _extractDownloadUrl(nested);
+        if (url != null) return url;
+      } else if (nested is List) {
+        for (final item in nested) {
+          final url = _extractDownloadUrl(item);
+          if (url != null) return url;
+        }
+      }
+    }
+
+    return null;
+  }
+
   Future<void> _startConcurrentDownload(DownloadingTaskModel task) async {
     try {
       final dio = Dio();
@@ -514,10 +583,12 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
-      // ۱. تلاش با سرورهای عمومی Cobalt و هاگینگ‌فیس
+      // ۱. تلاش با APIهای چندسرویسی و Cobalt.
+      // هر API پاسخ متفاوتی دارد، بنابراین همه فرمت‌های رایج لینک را استخراج می‌کنیم.
       for (String apiUrl in cobaltApiUrls) {
         try {
-          bool isCustomServer = apiUrl.contains('muhamadjafari-video-downloader-api.hf.space');
+          final isCustomServer = apiUrl.contains('muhamadjafari-video-downloader-api.hf.space');
+          final isGrabSocial = apiUrl.contains('grabsocial.org');
 
           final response = await dio.post(
             apiUrl,
@@ -525,43 +596,24 @@ class _HomeScreenState extends State<HomeScreen> {
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Origin': 'https://cobalt.tools',
-                'Referer': 'https://cobalt.tools/',
+                'User-Agent': 'Mozilla/5.0 (Android) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                if (!isGrabSocial) 'Origin': 'https://cobalt.tools',
+                if (!isGrabSocial) 'Referer': 'https://cobalt.tools/',
               },
             ),
-            data: isCustomServer 
-                ? {'url': task.url} 
+            data: isCustomServer || isGrabSocial
+                ? {'url': task.url}
                 : {
                     'url': task.url,
-                    'videoQuality': '1080',
-                    'youtubeVideoCodec': 'h264',
-                    'downloadMode': 'auto',
-                    'isAudioOnly': false,
+                    // Current Cobalt API uses vCodec; the old youtubeVideoCodec
+                    // field is ignored by newer instances.
+                    'vCodec': 'h264',
                   },
             cancelToken: task.cancelToken,
           );
 
           if (response.statusCode == 200 && response.data != null) {
-            final data = response.data;
-            if (data is Map) {
-              if (isCustomServer) {
-                if (data['success'] == true) {
-                  downloadUrl = data['url'];
-                }
-              } else {
-                if (data['status'] == 'redirect' || data['status'] == 'stream' || data['status'] == 'tunnel') {
-                  downloadUrl = data['url'];
-                } else {
-                  downloadUrl = data['url'] ?? data['link'] ?? data['download'] ?? data['stream'];
-                }
-                
-                if (downloadUrl == null && data['picker'] != null && data['picker'] is List && (data['picker'] as List).isNotEmpty) {
-                  downloadUrl = data['picker'][0]['url'];
-                }
-              }
-            }
-
+            downloadUrl = _extractDownloadUrl(response.data);
             if (downloadUrl != null && downloadUrl.isNotEmpty) {
               success = true;
               break;
