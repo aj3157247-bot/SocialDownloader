@@ -512,6 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
+      // جستجو در سرورهای مختلف و استخراج فوق‌العاده هوشمند و چندکلیدی لینک
       for (String apiUrl in cobaltApiUrls) {
         try {
           final response = await dio.post(
@@ -535,7 +536,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (response.statusCode == 200 && response.data != null) {
             final data = response.data;
-            downloadUrl = data['url'] ?? (data['picker'] != null && (data['picker'] as List).isNotEmpty ? data['picker'][0]['url'] : null);
+            if (data is Map) {
+              // بررسی تمامی کلیدهای احتمالی برای یافتن لینک ویدیو
+              downloadUrl = data['url'] ?? data['link'] ?? data['download'] ?? data['stream'];
+              
+              if (downloadUrl == null && data['picker'] != null && data['picker'] is List && (data['picker'] as List).isNotEmpty) {
+                downloadUrl = data['picker'][0]['url'];
+              }
+              
+              if (downloadUrl == null && data['data'] != null && data['data'] is Map) {
+                downloadUrl = data['data']['url'] ?? data['data']['play'] ?? data['data']['link'];
+              }
+            }
+
             if (downloadUrl != null && downloadUrl.isNotEmpty) {
               success = true;
               break;
@@ -546,6 +559,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
+      // پشتیبان دوم برای تیک‌تاک و اینستاگرام (tikwm)
       if (!success) {
         try {
           final response = await dio.get(
@@ -554,8 +568,10 @@ class _HomeScreenState extends State<HomeScreen> {
             cancelToken: task.cancelToken,
           );
           if (response.statusCode == 200 && response.data != null) {
-            if (response.data['data'] != null) {
-              downloadUrl = response.data['data']['url'] ?? response.data['data']['play'];
+            final resData = response.data;
+            if (resData is Map && resData['data'] != null) {
+              final innerData = resData['data'];
+              downloadUrl = innerData['url'] ?? innerData['play'] ?? innerData['hdplay'];
               if (downloadUrl != null && downloadUrl.isNotEmpty) {
                 success = true;
               }
