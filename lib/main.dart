@@ -5,7 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart'; // اضافه شده برای مدیریت گواهی SSL
+import 'package:dio/io.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -444,7 +444,6 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 30);
 
-      // [بخش اصلاح شده برای حل خطای Handshake / SSL]
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
         client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
@@ -454,78 +453,87 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
-      for (String apiUrl in cobaltApiUrls) {
-        try {
-          final response = await dio.post(
-            apiUrl,
-            options: Options(
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://cobalt.tools/',
-                'Origin': 'https://cobalt.tools',
+      // ۱. اگر لینک یوتیوب است
+      if (task.url.contains('youtube.com') || task.url.contains('youtu.be')) {
+        for (String apiUrl in cobaltApiUrls) {
+          try {
+            final response = await dio.post(
+              apiUrl,
+              options: Options(
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Referer': 'https://cobalt.tools/',
+                  'Origin': 'https://cobalt.tools',
+                },
+              ),
+              data: {
+                'url': task.url,
+                'videoQuality': 'max',
+                'downloadMode': 'auto',
               },
-            ),
-            data: {
-              'url': task.url,
-              'videoQuality': 'max',
-              'downloadMode': 'auto',
-            },
-            cancelToken: task.cancelToken,
-          );
+              cancelToken: task.cancelToken,
+            );
 
-          if (response.statusCode == 200 && response.data != null) {
-            final data = response.data;
-            final status = data['status'];
-
-            if (status == 'tunnel' || status == 'redirect' || status == 'stream') {
-              downloadUrl = data['url'];
-              if (downloadUrl != null && downloadUrl.isNotEmpty) {
-                success = true;
-                break;
-              }
-            } else if (status == 'picker' && data['picker'] != null) {
-              final picker = data['picker'] as List;
-              if (picker.isNotEmpty) {
-                downloadUrl = picker[0]['url'];
-                if (downloadUrl != null && downloadUrl.isNotEmpty) {
-                  success = true;
-                  break;
-                }
-              }
-            } else if (data['url'] != null) {
-              downloadUrl = data['url'];
+            if (response.statusCode == 200 && response.data != null) {
+              final data = response.data;
+              downloadUrl = data['url'] ?? (data['picker'] != null && (data['picker'] as List).isNotEmpty ? data['picker'][0]['url'] : null);
               if (downloadUrl != null && downloadUrl.isNotEmpty) {
                 success = true;
                 break;
               }
             }
+          } catch (_) {
+            continue;
           }
-        } catch (_) {
-          continue;
         }
       }
 
+      // ۲. اگر لینک اینستاگرام است
       if (!success && (task.url.contains('instagram.com') || task.url.contains('instagr.am'))) {
         try {
           final response = await dio.get(
-            'https://api.vkrdown.com/api/instagram',
+            'https://www.tikwm.com/api/',
             queryParameters: {'url': task.url},
             cancelToken: task.cancelToken,
           );
-          if (response.statusCode == 200 && response.data['data'] != null) {
-            final mediaList = response.data['data']['media'];
-            if (mediaList is List && mediaList.isNotEmpty) {
-              downloadUrl = mediaList[0]['url'];
+          if (response.statusCode == 200 && response.data != null) {
+            if (response.data['data'] != null) {
+              downloadUrl = response.data['data']['url'] ?? response.data['data']['play'];
               if (downloadUrl != null && downloadUrl.isNotEmpty) {
                 success = true;
               }
             }
           }
         } catch (_) {}
+
+        if (!success) {
+          for (String apiUrl in cobaltApiUrls) {
+            try {
+              final response = await dio.post(
+                apiUrl,
+                options: Options(
+                  headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0',
+                  },
+                ),
+                data: {'url': task.url},
+                cancelToken: task.cancelToken,
+              );
+              if (response.statusCode == 200 && response.data['url'] != null) {
+                downloadUrl = response.data['url'];
+                success = true;
+                break;
+              }
+            } catch (_) {}
+          }
+        }
       }
 
+      // ۳. اگر لینک تیک‌تاک است
       if (!success && (task.url.contains('tiktok.com') || task.url.contains('vt.tiktok.com'))) {
         try {
           final response = await dio.get(
@@ -543,7 +551,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!success || downloadUrl == null) {
-        throw Exception('امکان استخراج لینک دانلود وجود ندارد.');
+        throw Exception('امکان استخراج لینک دانلود برای این پلتفرم وجود ندارد یا لینک نامعتبر است.');
       }
 
       var dir = await getTemporaryDirectory();
@@ -596,7 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
             });
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('یک ویدیو همزمان با موفقیت دانلود و ذخیره شد!')),
+                const SnackBar(content: Text('ویدیو با موفقیت دانلود و در گالری ذخیره شد!')),
               );
             }
           }
