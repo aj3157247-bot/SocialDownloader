@@ -502,7 +502,6 @@ class _HomeScreenState extends State<HomeScreen> {
       dio.options.connectTimeout = const Duration(seconds: 40);
       dio.options.receiveTimeout = const Duration(seconds: 40);
 
-      // تنظیم قدرتمند برای عبور از خطاهای Handshake و گواهینامه‌های SSL
       (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
         final client = HttpClient();
         client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
@@ -513,7 +512,6 @@ class _HomeScreenState extends State<HomeScreen> {
       String? downloadUrl;
       bool success = false;
 
-      // سیستم چندگانه جستجو و دریافت لینک از طریق تمامی سرورهای فعال (کوآبالت و ای‌پی‌آی‌های پشتیبان)
       for (String apiUrl in cobaltApiUrls) {
         try {
           final response = await dio.post(
@@ -544,11 +542,10 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         } catch (_) {
-          continue; // اگر سرور اول خطا داد، خودکار سرور بعدی را تست می‌کند
+          continue;
         }
       }
 
-      // اگر روش اول جواب نداد، برای تیک‌تاک و اینستاگرام از ای‌پی‌آی دوم (tikwm) استفاده کن
       if (!success) {
         try {
           final response = await dio.get(
@@ -634,7 +631,11 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         onError: (e) async {
           await raf.close();
-          if (!CancelToken.isCancel(e as DioException)) {
+          bool isCancelled = false;
+          if (e is DioException) {
+            isCancelled = CancelToken.isCancel(e);
+          }
+          if (!isCancelled) {
             setState(() {
               _activeDownloads.remove(task);
             });
@@ -644,7 +645,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
     } catch (e) {
-      if (!CancelToken.isCancel(e is DioException ? e : CancelToken())) {
+      bool isCancelled = false;
+      if (e is DioException) {
+        isCancelled = CancelToken.isCancel(e);
+      }
+
+      if (!isCancelled) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
